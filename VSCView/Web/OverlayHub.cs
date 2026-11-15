@@ -54,7 +54,12 @@ namespace VSCView.Web
         public Func<ApiRequest, ApiResponse> Api { get; set; }
 
         /// <summary>Per-install control panel key. Set before <see cref="Start"/>.</summary>
-        public string ApiKey { get; set; }
+        public string ApiKey
+        {
+            get => apiKey;
+            set { apiKey = value; if (server != null) server.ApiKey = value; } // takes effect immediately
+        }
+        private string apiKey;
 
         /// <summary>Control panel address; the key travels in the fragment, which browsers never send to a server.</summary>
         public string PanelUrl => $"{Url}panel/#k={ApiKey}";

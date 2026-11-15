@@ -187,6 +187,7 @@ namespace VSCView
                 case "POST /api/identify": return OnUi(() => ApiIdentify(Body(req)));
                 case "POST /api/settings": return OnUi(() => ApiSettings(Body(req)));
                 case "POST /api/open": return OnUi(() => ApiOpen(Body(req)));
+                case "POST /api/rotate-key": return OnUi(ApiRotateKey);
                 default: return ApiResponse.Error(404, "Unknown API " + route);
             }
         }
@@ -265,6 +266,20 @@ namespace VSCView
             }
             AutoLoadController();
             return ApiResponse.Ok(BuildPanelState());
+        }
+
+        /// <summary>
+        /// New panel key. The old one (and every dock URL that contains it, e.g. saved in OBS's settings)
+        /// stops working at once. Only an already-authorised caller can ask, and only it gets the new key.
+        /// </summary>
+        private ApiResponse ApiRotateKey()
+        {
+            settings.PanelKey = PanelKey.Generate();
+            SaveSettings();
+            overlayHub.ApiKey = settings.PanelKey;
+            if (panelForm != null && !panelForm.IsDisposed)
+                panelForm.Navigate(overlayHub.PanelUrl, $"http://127.0.0.1:{overlayHub.Port}/");
+            return ApiResponse.Ok(JsonConvert.SerializeObject(new { key = settings.PanelKey }));
         }
 
         private ApiResponse ApiOpen(JObject b)

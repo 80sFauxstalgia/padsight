@@ -4,7 +4,7 @@
 (() => {
   // ---------------------------------------------------------------- key, mode
   const hash = new URLSearchParams(location.hash.slice(1));
-  const KEY = hash.get('k') || sessionStorage.getItem('padsight.k') || '';
+  let KEY = hash.get('k') || sessionStorage.getItem('padsight.k') || '';
   if (hash.get('k')) sessionStorage.setItem('padsight.k', hash.get('k'));
   const DOCK = hash.get('dock') === '1';
   if (DOCK) document.documentElement.classList.add('dock');
@@ -219,6 +219,12 @@
           <div class="swatches">${accents.map(([c, n]) => `<button type="button" class="swatch" style="background:${c}" title="${n}" aria-label="${n}" aria-pressed="${c === cur}" data-act="accent" data-color="${c}"></button>`).join('')}</div>
           <p class="small">Only changes this panel. Pink, mint, lavender and yellow match the Vaporwave Pixel themes.</p>
           <div class="row"><button class="btn" type="button" data-act="open" data-what="about">About and licenses</button></div>
+        </section>
+        <section class="card" aria-label="Panel key">
+          <h2 class="label">Panel key</h2>
+          <p class="sub">The panel's controls need a key that only this PC knows. It's part of the OBS dock URL, and OBS saves that URL in its settings. If you think someone has seen it, reset it.</p>
+          <div class="row"><button class="btn" type="button" data-act="rotate-key">Reset panel key</button></div>
+          <p class="small">An OBS dock stops working until you copy the dock URL again. Overlay Browser Sources don't use the key, so they keep working.</p>
         </section>
       </div>`;
     },
@@ -630,6 +636,16 @@
     accent: async b => { try { state = await api('settings', { accent: b.dataset.color }); render(); } catch (e) { toast(e.message); } },
     filter: b => { themeFilter = b.dataset.f; store.set('themeFilter', themeFilter); renderThemeGrid(); },
     'reload-themes': async () => { themes = null; await renderThemeGrid(); toast('Theme list reloaded'); },
+    'rotate-key': async () => {
+      if (!confirm('Reset the panel key? Any OBS dock using the old URL stops working until you paste the new one.')) return;
+      try {
+        const r = await api('rotate-key', {});
+        KEY = r.key;
+        sessionStorage.setItem('padsight.k', KEY);
+        history.replaceState(null, '', `#k=${encodeURIComponent(KEY)}${DOCK ? '&dock=1' : ''}`);
+        toast('New key set. Copy the dock URL again for OBS.');
+      } catch (e) { toast(e.message); }
+    },
     diag: () => {
       const d = Object.assign({}, state, { userAgent: navigator.userAgent, time: new Date().toISOString() });
       copy(JSON.stringify(d, null, 2), 'Diagnostics');
