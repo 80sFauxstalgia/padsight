@@ -306,6 +306,7 @@ namespace VSCView
         /// </summary>
         private void FollowTick()
         {
+            UpdateStatusSnapshot();
             if (!(settings.FollowActiveController ?? true)) return;
 
             // UI thread only (see PostToUi), so no lock is needed.
@@ -336,6 +337,83 @@ namespace VSCView
             if (ActiveController != null && ActiveController.IsPresent && (now - activeLast).TotalSeconds < 2) return;
 
             ActivateController(candidate, deinitializePrevious: false);
+        }
+
+        private volatile string statusSnapshot = "{}";
+
+        /// <summary>
+        /// UI thread: build the JSON served at /status.json (controllers, SDL, channels, live inputs of the
+        /// active controller). Built here so the server thread never touches UI-thread state.
+        /// </summary>
+        private void UpdateStatusSnapshot()
+        {
+            try
+            {
+                var controllers = ControllerMemoHack.Values.Select(v => v.Item1).Select(c => new
+                {
+                    name = c.Name,
+                    kind = ControllerKind(c),
+                    present = c.IsPresent,
+                    active = c == ActiveController,
+                    reading = c == ActiveController || followReading.Contains(c),
+                    inputs = (c == ActiveController || followReading.Contains(c)) ? DescribeInputs(SafeState(c)) : null,
+                }).ToList();
+                var snap = new
+                {
+                    app = "VSCView",
+                    theme = currentThemeFile,
+                    followMode = settings.FollowActiveController ?? true,
+                    sdl = DeviceManager.SdlStatus,
+                    overlay = overlayHub.IsRunning ? overlayHub.Url : null,
+                    controllers,
+                    channels = overlayHub.ChannelStats(),
+                };
+                statusSnapshot = JsonConvert.SerializeObject(snap);
+                overlayHub.StatusJson = () => statusSnapshot;
+            }
+            catch (Exception ex) { Debug.WriteLine("status: " + ex.Message); }
+        }
+
+        private static ControllerState SafeState(IController c)
+        {
+            try { return c.GetState(); } catch { return null; }
+        }
+
+        /// <summary>Active inputs as "control:key=value" strings (for diagnostics).</summary>
+        private static List<string> DescribeInputs(ControllerState s)
+        {
+            var list = new List<string>();
+            if (s?.Controls == null) return list;
+            foreach (string k in s.Controls.Keys)
+            {
+                switch (s.Controls[k])
+                {
+                    case ControlButton b: if (b.Button0) list.Add(k); break;
+                    case ControlButtonPair p: if (p.Left.Button0) list.Add(k + ":l"); if (p.Right.Button0) list.Add(k + ":r"); break;
+                    case ControlButtonQuad q:
+                        if (q.ButtonN) list.Add(k + ":n"); if (q.ButtonE) list.Add(k + ":e");
+                        if (q.ButtonS) list.Add(k + ":s"); if (q.ButtonW) list.Add(k + ":w"); break;
+                    case ControlDPad d: if (d.Direction != EDPadDirection.None) list.Add(k + "=" + d.Direction); break;
+                    case ControlTriggerPair tr:
+                        if (tr.Left.Analog > 0.02f || tr.Left.Stage2) list.Add($"{k}:l={tr.Left.Analog:0.00}{(tr.Left.Stage2 ? "+stage2" : "")}");
+                        if (tr.Right.Analog > 0.02f || tr.Right.Stage2) list.Add($"{k}:r={tr.Right.Analog:0.00}{(tr.Right.Stage2 ? "+stage2" : "")}");
+                        break;
+                    case ControlStick st:
+                        if (st.Click || Math.Abs(st.X) > 0.08f || Math.Abs(st.Y) > 0.08f)
+                            list.Add($"{k}=({st.X:0.00},{st.Y:0.00}){(st.Click ? "+click" : "")}");
+                        break;
+                    case ControlTouch tc:
+                        for (int i = 0; i < tc.TouchCount; i++)
+                            if (tc.Touch[i]) list.Add($"{k}:{i}=({tc.X[i]:0.00},{tc.Y[i]:0.00})");
+                        if (tc.Click) list.Add(k + ":click");
+                        break;
+                    case Input.ControlTouchPressure tp:
+                        if (tp.Touch) list.Add($"{k}=({tp.X:0.00},{tp.Y:0.00}) p={tp.Pressure:0.00}");
+                        if (tp.Click) list.Add(k + ":click");
+                        break;
+                }
+            }
+            return list;
         }
 
         private static bool IsInUse(ControllerState s)

@@ -85,6 +85,7 @@ Right-click › **Settings…**:
   * Make sure `SDL3.dll` is next to `VSCView.exe`.
   * Turn the controller on, or plug it in, while VSCView is running. It is detected within a second.
 * **The overlay is on the wrong controller.** Press a button on the one you're using; follow mode switches after the other has been idle for 2 seconds. Or pick it from the **Controller** menu.
+* **Diagnostics.** `http://127.0.0.1:47817/status.json` lists the detected controllers, which one is active and its live inputs, the SDL3 status, and per-source render timings.
 * **CPU use.**
   * Rendering only happens while a source is connected, and unchanged frames are skipped.
   * Lower the frame rate in **Settings…** or with `&fps=30` if needed.

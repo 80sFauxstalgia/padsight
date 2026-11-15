@@ -35,11 +35,27 @@ namespace VSCView.Web
         public bool Start(int port)
         {
             server?.Dispose();
-            server = new OverlayServer(port, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wwwroot"), ChannelForQuery);
+            server = new OverlayServer(port, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wwwroot"), ChannelForQuery)
+            {
+                StatusJson = () => StatusJson?.Invoke() ?? "{}",
+            };
             return server.Start();
         }
 
         public string Url => $"http://127.0.0.1:{Port}/";
+
+        /// <summary>Supplied by the window: a JSON snapshot for /status.json.</summary>
+        public Func<string> StatusJson { get; set; }
+
+        public List<object> ChannelStats()
+        {
+            return Snapshot().Select(ch => (object)new
+            {
+                key = ch.Key, clients = ch.ClientCount, fps = ch.Fps,
+                renderMs = Math.Round(ch.AvgRenderMs, 2), pngMs = Math.Round(ch.AvgEncodeMs, 2),
+                sent = ch.FramesSent, unchanged = ch.FramesSkipped,
+            }).ToList();
+        }
 
         /// <summary>Theme-specific URL for the theme currently shown in the window.</summary>
         public string UrlForTheme(string themeFile)

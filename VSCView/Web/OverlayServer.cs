@@ -23,6 +23,9 @@ namespace VSCView.Web
 
         private readonly string webRoot;
         private readonly Func<string, OverlayChannel> channelForQuery;
+
+        /// <summary>Optional JSON for GET /status.json (controllers, SDL status, channel stats).</summary>
+        public Func<string> StatusJson { get; set; }
         private TcpListener listener;
         private Thread acceptThread;
         private volatile bool running;
@@ -168,6 +171,13 @@ namespace VSCView.Web
                     channel.Attach(ws); // subscribes to Closed before the socket threads start
                     ws.Start();
                     return true;
+                }
+
+                if (path == "/status.json")
+                {
+                    string json = StatusJson?.Invoke() ?? "{}";
+                    WriteSimple(stream, 200, "OK", "application/json; charset=utf-8", Encoding.UTF8.GetBytes(json));
+                    return false;
                 }
 
                 if (path == "/" || path == "") path = "/overlay.html";
