@@ -289,3 +289,6 @@ __pycache__/
 
 # SDL3 release downloaded at build time
 Deps/SDL3/
+
+# Release packages (tools/package.ps1)
+dist/
