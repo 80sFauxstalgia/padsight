@@ -4,12 +4,15 @@ On-screen Controller Overlay for Steam Controller and various other controllers.
 This fork adds:
 * **The 2026 Steam Controller**, read natively through [SDL3](https://www.libsdl.org/): both trackpads (position, click and pressure), thumbstick touch, all four back buttons (L4/L5/R4/R5) and grip sense.
 * **An OBS Browser Source with real transparency.** No chroma key or green screen is needed.
+* **Theme Browser.** Every theme comes with a live preview. Use it in the window, or copy an OBS URL pinned to it.
+* **Settings dialog** for the OBS server, controllers and window.
+* **Follow mode.** With several controllers connected, VSCView switches to whichever one you are using, and to the theme you last used with that kind of controller. One OBS source covers every game.
 * **SDK-style projects.** `dotnet build` works with only the .NET SDK installed.
 
 The original 2015 Steam Controller keeps using VSCView's existing HID decoder, which already reports real trackpad touch positions and both rear grips.
 
 ## OBS setup (Browser Source, no chroma key)
-1. Start VSCView. Right-click the window and pick a **Theme**. If more than one controller is connected, also pick a **Controller**.
+1. Start VSCView. Right-click the window and open **Theme Browser…** (or **Theme**) to pick a theme. With follow mode on (the default), just press a button on the controller you are using.
 2. Right-click, open **OBS Browser Source**, and choose **Copy URL (follows window theme)**. The default URL is `http://127.0.0.1:47817/`.
 3. In OBS, add a source: **+** > **Browser**.
    * **URL**: paste the copied URL.
@@ -31,7 +34,7 @@ Several Browser Sources can point at different `theme` URLs at the same time. Ev
 
 How it works: VSCView renders the theme with its own renderer into an off-screen transparent bitmap. A small built-in server streams changed frames as PNGs over a WebSocket, and the page draws them onto a `<canvas>`. Nothing is rendered while no source is connected, and identical frames are not re-sent. The server listens on **127.0.0.1 only**. It is not reachable from your network, and requests with a non-local `Host` or `Origin` are refused.
 
-**OBS Browser Source** > **Status...** shows render/encode timings and the SDL3 status. Disable the server with **OBS Browser Source > Enabled**. To change the port, set `"OverlayPort"` in `settings.json`. A second VSCView instance uses port + 1.
+**Settings…** (or **OBS Browser Source** > **Status...**) shows render/encode timings and the SDL3 status. Disable the server with **OBS Browser Source > Enabled**. To change the port, set `"OverlayPort"` in `settings.json`. A second VSCView instance uses port + 1.
 
 ## Controller support notes
 * **2026 Steam Controller**: works over USB or the wireless puck, including while Steam is running with Steam Input. SDL3 is set up to touch only this controller: every other HIDAPI driver is disabled, and the XInput, RawInput, WGI, GameInput and DirectInput backends are off, so Steam's virtual Xbox pads are never picked up. It appears in the **Controller** menu as *Steam Controller (2026)*. Motion is not shown for it yet.
