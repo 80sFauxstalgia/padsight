@@ -128,8 +128,14 @@ namespace VSCView
         /// <summary>POST /api/obs/connect {enabled, host, port, password?}. The password is never sent back.</summary>
         private ApiResponse ApiObsConnect(JObject b)
         {
+            string oldHost = settings.ObsHost ?? "127.0.0.1";
+            int oldPort = settings.ObsPort ?? 4455;
             if (b["host"] != null) settings.ObsHost = string.IsNullOrWhiteSpace((string)b["host"]) ? null : ((string)b["host"]).Trim();
             if (b["port"] != null) settings.ObsPort = (int)b["port"];
+            // A saved password belongs to the OBS it was entered for. Never answer another host's challenge with
+            // it (a hostile server could brute-force the hash offline): a new address needs the password again.
+            bool moved = !string.Equals(settings.ObsHost ?? "127.0.0.1", oldHost, StringComparison.OrdinalIgnoreCase) || (settings.ObsPort ?? 4455) != oldPort;
+            if (moved && b["password"] == null) settings.ObsPasswordProtected = null;
             if (b["password"] != null) settings.ObsPasswordProtected = ObsPassword.Protect((string)b["password"]);
             if (b["forgetPassword"] != null && (bool)b["forgetPassword"]) settings.ObsPasswordProtected = null;
             if (b["enabled"] != null) settings.ObsEnabled = (bool)b["enabled"];

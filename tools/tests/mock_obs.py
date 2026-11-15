@@ -10,6 +10,7 @@ A tiny control port lets a test drive OBS-side changes:
   curl "http://127.0.0.1:4466/scene?name=BRB"      -> CurrentProgramSceneChanged
   curl "http://127.0.0.1:4466/stream?on=1"         -> StreamStateChanged
   curl "http://127.0.0.1:4466/state"               -> JSON dump of scenes and inputs
+  curl "http://127.0.0.1:4466/reset"               -> back to the starting scenes and inputs
 Standard library only.
 """
 import argparse
@@ -23,6 +24,9 @@ import urllib.parse
 
 GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
+import copy
+
+INITIAL = None
 state = {
     'scene': 'Gameplay',
     'scenes': ['Starting Soon', 'Gameplay', 'Rocket League', 'BRB'],
@@ -34,8 +38,10 @@ state = {
         'Cam frame': ('browser_source', {'url': 'http://127.0.0.1:9000/overlays/camframe.html', 'width': 400, 'height': 266}),
     },
     'scene_items': {},
+    'auth_attempts': 0,  # Identify messages that carried an authentication string
 }
 clients = set()
+INITIAL = copy.deepcopy(state)
 
 
 async def read_frame(reader):
@@ -143,6 +149,8 @@ async def ws_handler(reader, writer, password):
         msg = json.loads(data)
         if msg.get('op') != 1:
             return
+        if msg['d'].get('authentication'):
+            state['auth_attempts'] += 1
         if password:
             secret = base64.b64encode(hashlib.sha256((password + salt).encode()).digest()).decode()
             expected = base64.b64encode(hashlib.sha256((secret + challenge).encode()).digest()).decode()
@@ -193,7 +201,10 @@ async def control_handler(reader, writer):
     u = urllib.parse.urlparse(path)
     q = dict(urllib.parse.parse_qsl(u.query))
     body = {'ok': True}
-    if u.path == '/scene':
+    if u.path == '/reset':
+        state.clear()
+        state.update(copy.deepcopy(INITIAL))
+    elif u.path == '/scene':
         state['scene'] = q.get('name', state['scene'])
         await broadcast_event('CurrentProgramSceneChanged', {'sceneName': state['scene']}, 1 << 2)
     elif u.path == '/stream':
@@ -204,7 +215,7 @@ async def control_handler(reader, writer):
         await broadcast_event('RecordStateChanged', {'outputActive': state['recording'], 'outputState': 'x'}, 1 << 6)
     elif u.path == '/state':
         body = {'scene': state['scene'], 'streaming': state['streaming'], 'inputs': {k: v[1] for k, v in state['inputs'].items()},
-                'scene_items': state['scene_items']}
+                'scene_items': state['scene_items'], 'auth_attempts': state['auth_attempts']}
     data = json.dumps(body).encode()
     writer.write(b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n' % len(data) + data)
     await writer.drain()

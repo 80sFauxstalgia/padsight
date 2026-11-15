@@ -16,6 +16,8 @@ ap.add_argument('--panel', default='http://127.0.0.1:47818')
 ap.add_argument('--settings', required=True)
 ap.add_argument('--mock-port', type=int, default=4456)
 ap.add_argument('--control', default='http://127.0.0.1:4466')
+ap.add_argument('--other-port', type=int, default=4457, help='a second mock (another "host") for the password-scope test')
+ap.add_argument('--other-control', default='http://127.0.0.1:4467')
 a = ap.parse_args()
 KEY = json.load(open(a.settings, encoding='utf-8-sig'))['PanelKey']
 failures = []
@@ -57,6 +59,11 @@ def check(name, ok, detail=''):
     if not ok:
         failures.append(name)
 
+
+# Start every run from the same OBS state, and from PadSight disconnected.
+control('/reset')
+urllib.request.urlopen(a.other_control + '/reset', timeout=5).read()
+api('obs/connect', {'enabled': False})
 
 # 1. wrong password
 api('obs/connect', {'enabled': True, 'host': '127.0.0.1', 'port': a.mock_port, 'password': 'nope'})
@@ -185,7 +192,19 @@ code, r = api('hotkeys', {'toggle': 'Ctrl+Alt+Shift+F11'})
 check('hotkey with modifiers accepted and registered', code == 200 and not r['obs']['hotkeys']['errors'], r)
 api('hotkeys', {'toggle': ''})
 
-# 11. disconnect
+# 11. a saved password is never sent to another OBS address
+code, r = api('obs/connect', {'enabled': True, 'port': a.other_port})
+s = wait_for(lambda s: s['status'] in ('WrongPassword', 'Unreachable'), 'other host')
+check('changing the address forgets the saved password', s['hasPassword'] is False, s)
+with urllib.request.urlopen(a.other_control + '/state', timeout=5) as resp:
+    other = json.loads(resp.read())
+check('the other server never got an answer derived from the password', other['auth_attempts'] == 0, other['auth_attempts'])
+check('it asks for the password instead of retrying', s['status'] == 'WrongPassword', s)
+api('obs/connect', {'enabled': True, 'port': a.mock_port, 'password': 'testpass'})
+s = wait_for(lambda s: s['status'] == 'Connected', 'back')
+check('re-entering the password reconnects', s['status'] == 'Connected', s)
+
+# 12. disconnect
 api('obs/connect', {'enabled': False})
 s = wait_for(lambda s: s['status'] == 'Off', 'off')
 check('disconnects', s['status'] == 'Off', s)

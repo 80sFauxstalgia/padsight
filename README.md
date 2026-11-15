@@ -78,6 +78,7 @@ The control panel also works as an OBS dock. On the panel's OBS page, click **Co
 PadSight can talk to OBS through OBS's own WebSocket server (OBS 28 or newer):
 1. In OBS, open **Tools › WebSocket Server Settings**, tick **Enable WebSocket server**, and click **Show Connect Info** to see the password.
 2. On the panel's OBS page, under **OBS link**, enter the password and click **Connect to OBS**. PadSight stores the password on this PC only, encrypted for your Windows account (DPAPI), and never shows it again.
+   * **OBS on another PC** (two-PC setups): enter that PC's address. The link is plain `ws://` on your local network, because that's what obs-websocket offers. The password itself is never sent, only a one-time hashed answer. Changing the address forgets the saved password, so you'll be asked for it again.
 
 Once linked:
 * **Add it for me** creates the Browser Source in the scene you choose, at the right size, with "Shutdown source when not visible" on. It only ever adds PadSight's own overlay URL.
