@@ -59,7 +59,7 @@ namespace VSCView.Input
 
         public EConnectionType ConnectionType { get; }
         public string[] ConnectionTypeCode => ConnectionType == EConnectionType.Dongle
-            ? new[] { "CONNECTION_DONGLE_SC2026", "CONNECTION_DONGLE" }
+            ? new[] { "CONNECTION_DONGLE_SC", "CONNECTION_DONGLE" }
             : new[] { "CONNECTION_WIRE_USB", "CONNECTION_WIRE" };
         public string[] ControllerTypeCode => new[] { TypeCode, "DEVICE_SC" };
         public bool HasSelectableAlternatives => false;

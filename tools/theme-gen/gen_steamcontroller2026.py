@@ -499,6 +499,13 @@ def main():
         i = build(st)
         icon = icon or i
     icon.save(os.path.join(OUT, 'icon.png'))
+    # controller-menu device icon (same footprint as icons/DEVICE_SC.png)
+    base = Image.open(os.path.join(OUT, GRAPHITE.name, 'base.png'))
+    dev = base.copy()
+    dev.thumbnail((138, 96), Image.LANCZOS)
+    canvas = Image.new('RGBA', (142, 100), (0, 0, 0, 0))
+    canvas.paste(dev, ((142 - dev.width) // 2, (100 - dev.height) // 2))
+    canvas.save(os.path.join(ROOT, 'VSCView', 'icons', 'DEVICE_SC2026.png'))
     with open(os.path.join(OUT, 'name.txt'), 'w', encoding='utf-8') as f:
         f.write('Valve Steam Controller (2026)')
     print('wrote', OUT)
