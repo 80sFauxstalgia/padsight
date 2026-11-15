@@ -79,8 +79,16 @@
       pending = ev.data;          // newest frame wins; never queue
       drawLatest();
     };
+    let opened = false;
+    ws.addEventListener('open', () => { opened = true; });
     ws.onclose = () => {
       setStatus('VSCView not running – retrying…');
+      if (!opened && params.has('theme')) {
+        // The server is up but refused the socket: almost always a wrong theme path.
+        fetch('/status.json', { cache: 'no-store' })
+          .then(r => { if (r.ok) setStatus(`Theme not found or failed to load: ${params.get('theme')} – retrying…`); })
+          .catch(() => {});
+      }
       ctx.clearRect(0, 0, canvas.width, canvas.height); // stay transparent while disconnected
       setTimeout(connect, backoff);
       backoff = Math.min(backoff * 2, 3000);
