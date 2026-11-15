@@ -1,0 +1,685 @@
+{
+  "name": "Full",
+  "width": 1000,
+  "height": 760,
+  "version": 1,
+  "children": [
+    {
+      "type": "showhide",
+      "input": "grip_sense:l",
+      "children": [
+        {
+          "type": "image",
+          "image": "grip_sense_l.png",
+          "x": 160.0,
+          "y": 570.0,
+          "width": 280,
+          "height": 380,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "grip_sense:r",
+      "children": [
+        {
+          "type": "image",
+          "image": "grip_sense_r.png",
+          "x": 840.0,
+          "y": 570.0,
+          "width": 280,
+          "height": 380,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "image",
+      "image": "trigger_l.png",
+      "x": 230.0,
+      "y": 52.5,
+      "width": 180,
+      "height": 75,
+      "center": true,
+      "winform.interpolation": "NearestNeighbor",
+      "winform.smoothing": "None"
+    },
+    {
+      "type": "pbar",
+      "image": "trigger_l_fill.png",
+      "x": 230.0,
+      "y": 52.5,
+      "width": 180,
+      "height": 75,
+      "center": true,
+      "direction": "up",
+      "input": "triggers:l:analog",
+      "winform.interpolation": "NearestNeighbor",
+      "winform.smoothing": "None"
+    },
+    {
+      "type": "image",
+      "image": "trigger_r.png",
+      "x": 770.0,
+      "y": 52.5,
+      "width": 180,
+      "height": 75,
+      "center": true,
+      "winform.interpolation": "NearestNeighbor",
+      "winform.smoothing": "None"
+    },
+    {
+      "type": "pbar",
+      "image": "trigger_r_fill.png",
+      "x": 770.0,
+      "y": 52.5,
+      "width": 180,
+      "height": 75,
+      "center": true,
+      "direction": "up",
+      "input": "triggers:r:analog",
+      "winform.interpolation": "NearestNeighbor",
+      "winform.smoothing": "None"
+    },
+    {
+      "type": "image",
+      "image": "bumper_l.png",
+      "x": 232.5,
+      "y": 112.5,
+      "width": 215,
+      "height": 45,
+      "center": true,
+      "winform.interpolation": "NearestNeighbor",
+      "winform.smoothing": "None"
+    },
+    {
+      "type": "showhide",
+      "input": "bumpers:l",
+      "children": [
+        {
+          "type": "image",
+          "image": "bumper_l_on.png",
+          "x": 232.5,
+          "y": 112.5,
+          "width": 215,
+          "height": 45,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "image",
+      "image": "bumper_r.png",
+      "x": 767.5,
+      "y": 112.5,
+      "width": 215,
+      "height": 45,
+      "center": true,
+      "winform.interpolation": "NearestNeighbor",
+      "winform.smoothing": "None"
+    },
+    {
+      "type": "showhide",
+      "input": "bumpers:r",
+      "children": [
+        {
+          "type": "image",
+          "image": "bumper_r_on.png",
+          "x": 767.5,
+          "y": 112.5,
+          "width": 215,
+          "height": 45,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "image",
+      "image": "base.png",
+      "x": 500.0,
+      "y": 425.0,
+      "width": 1000,
+      "height": 670,
+      "center": true,
+      "winform.interpolation": "NearestNeighbor",
+      "winform.smoothing": "None"
+    },
+    {
+      "type": "showhide",
+      "input": "quad_left:n",
+      "children": [
+        {
+          "type": "image",
+          "image": "dpad_n.png",
+          "x": 222.5,
+          "y": 205.0,
+          "width": 45,
+          "height": 40,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "quad_left:e",
+      "children": [
+        {
+          "type": "image",
+          "image": "dpad_e.png",
+          "x": 257.5,
+          "y": 242.5,
+          "width": 45,
+          "height": 45,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "quad_left:s",
+      "children": [
+        {
+          "type": "image",
+          "image": "dpad_s.png",
+          "x": 222.5,
+          "y": 277.5,
+          "width": 45,
+          "height": 45,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "quad_left:w",
+      "children": [
+        {
+          "type": "image",
+          "image": "dpad_w.png",
+          "x": 185.0,
+          "y": 242.5,
+          "width": 40,
+          "height": 45,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "quad_right:n",
+      "children": [
+        {
+          "type": "image",
+          "image": "face_y.png",
+          "x": 777.5,
+          "y": 190.0,
+          "width": 65,
+          "height": 60,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "quad_right:e",
+      "children": [
+        {
+          "type": "image",
+          "image": "face_b.png",
+          "x": 830.0,
+          "y": 242.5,
+          "width": 60,
+          "height": 65,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "quad_right:s",
+      "children": [
+        {
+          "type": "image",
+          "image": "face_a.png",
+          "x": 777.5,
+          "y": 295.0,
+          "width": 65,
+          "height": 60,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "quad_right:w",
+      "children": [
+        {
+          "type": "image",
+          "image": "face_x.png",
+          "x": 725.0,
+          "y": 242.5,
+          "width": 60,
+          "height": 65,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "home",
+      "children": [
+        {
+          "type": "image",
+          "image": "steam_on.png",
+          "x": 500.0,
+          "y": 237.5,
+          "width": 70,
+          "height": 65,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "menu:l",
+      "children": [
+        {
+          "type": "image",
+          "image": "view_on.png",
+          "x": 337.5,
+          "y": 172.5,
+          "width": 55,
+          "height": 35,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "menu:r",
+      "children": [
+        {
+          "type": "image",
+          "image": "menu_on.png",
+          "x": 662.5,
+          "y": 172.5,
+          "width": 55,
+          "height": 35,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "qam",
+      "children": [
+        {
+          "type": "image",
+          "image": "qam_on.png",
+          "x": 500.0,
+          "y": 485.0,
+          "width": 70,
+          "height": 40,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "grip:l",
+      "children": [
+        {
+          "type": "image",
+          "image": "back_l4.png",
+          "x": 122.5,
+          "y": 567.5,
+          "width": 85,
+          "height": 45,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "grip2:l",
+      "children": [
+        {
+          "type": "image",
+          "image": "back_l5.png",
+          "x": 147.5,
+          "y": 647.5,
+          "width": 85,
+          "height": 45,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "grip:r",
+      "children": [
+        {
+          "type": "image",
+          "image": "back_r4.png",
+          "x": 877.5,
+          "y": 567.5,
+          "width": 85,
+          "height": 45,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "grip2:r",
+      "children": [
+        {
+          "type": "image",
+          "image": "back_r5.png",
+          "x": 852.5,
+          "y": 647.5,
+          "width": 85,
+          "height": 45,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "x": 326,
+      "y": 478,
+      "rot": 9.87,
+      "children": [
+        {
+          "type": "showhide",
+          "input": "touch_left:click",
+          "children": [
+            {
+              "type": "image",
+              "image": "pad_click.png",
+              "x": 0,
+              "y": 0,
+              "width": 200,
+              "height": 200,
+              "center": true,
+              "winform.interpolation": "NearestNeighbor",
+              "winform.smoothing": "None"
+            }
+          ]
+        },
+        {
+          "type": "showhide",
+          "input": "touch_left:0:touch",
+          "children": [
+            {
+              "type": "pbar",
+              "image": "pad_pressure.png",
+              "x": -106.0,
+              "y": 0,
+              "width": 20,
+              "height": 140,
+              "center": true,
+              "direction": "up",
+              "input": "touch_left:0:pressure",
+              "winform.interpolation": "NearestNeighbor",
+              "winform.smoothing": "None"
+            }
+          ]
+        },
+        {
+          "type": "trailpad",
+          "image": "pad_trail.png",
+          "x": 0,
+          "y": 0,
+          "width": 40,
+          "height": 40,
+          "input": "touch_left:0:touch",
+          "inputX": "touch_left:0:x * 78",
+          "inputY": "touch_left:0:y * 78",
+          "length": 24,
+          "children": [
+            {
+              "type": "showhide",
+              "input": "touch_left:0:touch",
+              "children": [
+                {
+                  "type": "image",
+                  "image": "pad_touch.png",
+                  "x": 0,
+                  "y": 0,
+                  "width": 50,
+                  "height": 50,
+                  "center": true,
+                  "winform.interpolation": "NearestNeighbor",
+                  "winform.smoothing": "None"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "x": 674,
+      "y": 478,
+      "rot": -9.87,
+      "children": [
+        {
+          "type": "showhide",
+          "input": "touch_right:click",
+          "children": [
+            {
+              "type": "image",
+              "image": "pad_click.png",
+              "x": 0,
+              "y": 0,
+              "width": 200,
+              "height": 200,
+              "center": true,
+              "winform.interpolation": "NearestNeighbor",
+              "winform.smoothing": "None"
+            }
+          ]
+        },
+        {
+          "type": "showhide",
+          "input": "touch_right:0:touch",
+          "children": [
+            {
+              "type": "pbar",
+              "image": "pad_pressure.png",
+              "x": 106.0,
+              "y": 0,
+              "width": 20,
+              "height": 140,
+              "center": true,
+              "direction": "up",
+              "input": "touch_right:0:pressure",
+              "winform.interpolation": "NearestNeighbor",
+              "winform.smoothing": "None"
+            }
+          ]
+        },
+        {
+          "type": "trailpad",
+          "image": "pad_trail.png",
+          "x": 0,
+          "y": 0,
+          "width": 40,
+          "height": 40,
+          "input": "touch_right:0:touch",
+          "inputX": "touch_right:0:x * 78",
+          "inputY": "touch_right:0:y * 78",
+          "length": 24,
+          "children": [
+            {
+              "type": "showhide",
+              "input": "touch_right:0:touch",
+              "children": [
+                {
+                  "type": "image",
+                  "image": "pad_touch.png",
+                  "x": 0,
+                  "y": 0,
+                  "width": 50,
+                  "height": 50,
+                  "center": true,
+                  "winform.interpolation": "NearestNeighbor",
+                  "winform.smoothing": "None"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "stick_touch:l",
+      "children": [
+        {
+          "type": "image",
+          "image": "stick_touch_l.png",
+          "x": 367.5,
+          "y": 300.0,
+          "width": 145,
+          "height": 150,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "slider",
+      "x": 368,
+      "y": 300,
+      "inputX": "stick_left:x * 20",
+      "inputY": "stick_left:y * 20",
+      "children": [
+        {
+          "type": "image",
+          "image": "stick_cap.png",
+          "x": 0,
+          "y": 0,
+          "width": 100,
+          "height": 100,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        },
+        {
+          "type": "showhide",
+          "input": "stick_left:click",
+          "children": [
+            {
+              "type": "image",
+              "image": "stick_cap_on.png",
+              "x": 0,
+              "y": 0,
+              "width": 100,
+              "height": 100,
+              "center": true,
+              "winform.interpolation": "NearestNeighbor",
+              "winform.smoothing": "None"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "showhide",
+      "input": "stick_touch:r",
+      "children": [
+        {
+          "type": "image",
+          "image": "stick_touch_r.png",
+          "x": 632.5,
+          "y": 300.0,
+          "width": 145,
+          "height": 150,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        }
+      ]
+    },
+    {
+      "type": "slider",
+      "x": 632,
+      "y": 300,
+      "inputX": "stick_right:x * 20",
+      "inputY": "stick_right:y * 20",
+      "children": [
+        {
+          "type": "image",
+          "image": "stick_cap.png",
+          "x": 0,
+          "y": 0,
+          "width": 100,
+          "height": 100,
+          "center": true,
+          "winform.interpolation": "NearestNeighbor",
+          "winform.smoothing": "None"
+        },
+        {
+          "type": "showhide",
+          "input": "stick_right:click",
+          "children": [
+            {
+              "type": "image",
+              "image": "stick_cap_on.png",
+              "x": 0,
+              "y": 0,
+              "width": 100,
+              "height": 100,
+              "center": true,
+              "winform.interpolation": "NearestNeighbor",
+              "winform.smoothing": "None"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

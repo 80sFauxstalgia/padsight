@@ -47,6 +47,10 @@ namespace VSCView
 
         IconImageManager IconManager;
 
+        Web.OverlayHub overlayHub;
+        string currentThemeFile;
+        public const int DefaultOverlayPort = 47817;
+
         public MainForm(int instanceNumber = 0)
         {
             InitializeComponent();
@@ -65,6 +69,7 @@ namespace VSCView
             DeviceManager = new DeviceManager();
 
             ControllerData = new ControllerData();
+            overlayHub = new Web.OverlayHub(ControllerData);
             state = new ControllerState();
             // 5s lookback for smoothing
             sensorData = new SensorCollector(5, true);
@@ -78,6 +83,8 @@ namespace VSCView
 
             LoadThemes();
             LoadSettings();
+            overlayHub.DefaultFps = settings.OverlayFps ?? 60;
+            AddOverlayMenu();
             if (File.Exists("ctrl.last"))
             {
                 settings.Theme = File.ReadAllText("ctrl.last");
@@ -135,8 +142,64 @@ namespace VSCView
         /// <param name="e"></param>
         private void MainForm_Load(object sender, EventArgs e)
         {
+            if (settings.OverlayEnabled ?? true)
+                StartOverlayServer();
             LoadControllers(true);
         }
+
+        #region OBS Browser Source
+        ToolStripMenuItem tsmiOverlay;
+        ToolStripMenuItem tsmiOverlayEnabled;
+
+        private int OverlayPort => (settings.OverlayPort ?? DefaultOverlayPort) + instanceNumber;
+
+        private void StartOverlayServer()
+        {
+            if (!overlayHub.Start(OverlayPort))
+                MessageBox.Show(this, overlayHub.Error, "OBS Browser Source", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            UpdateOverlayMenu();
+        }
+
+        private void AddOverlayMenu()
+        {
+            tsmiOverlay = new ToolStripMenuItem("OBS Browser Source");
+            tsmiOverlayEnabled = new ToolStripMenuItem("Enabled", null, (s, e) =>
+            {
+                settings.OverlayEnabled = !(settings.OverlayEnabled ?? true);
+                SaveSettings();
+                if (settings.OverlayEnabled ?? true) StartOverlayServer();
+                else { overlayHub.Dispose(); overlayHub = new Web.OverlayHub(ControllerData) { DefaultFps = settings.OverlayFps ?? 60 }; if (currentThemeFile != null) overlayHub.SetMainTheme(currentThemeFile); }
+                UpdateOverlayMenu();
+            });
+            tsmiOverlay.DropDownItems.Add(new ToolStripMenuItem("Copy URL (follows window theme)", null, (s, e) => CopyText(overlayHub.Url)));
+            tsmiOverlay.DropDownItems.Add(new ToolStripMenuItem("Copy URL (pinned to current theme)", null, (s, e) => CopyText(overlayHub.UrlForTheme(currentThemeFile))));
+            tsmiOverlay.DropDownItems.Add(new ToolStripMenuItem("Open in browser", null, (s, e) => { try { Process.Start(overlayHub.Url); } catch { } }));
+            tsmiOverlay.DropDownItems.Add(new ToolStripMenuItem("Status...", null, (s, e) =>
+                MessageBox.Show(this,
+                    $"Overlay: {(overlayHub.IsRunning ? overlayHub.Url : "off")}
+{overlayHub.Error}
+SDL3: {DeviceManager.SdlStatus}
+
+{overlayHub.StatsText()}",
+                    "OBS Browser Source", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+            tsmiOverlay.DropDownItems.Add(new ToolStripSeparator());
+            tsmiOverlay.DropDownItems.Add(tsmiOverlayEnabled);
+            cmsMain.Items.Insert(cmsMain.Items.IndexOf(tsmiController) + 1, tsmiOverlay);
+            UpdateOverlayMenu();
+        }
+
+        private void UpdateOverlayMenu()
+        {
+            if (tsmiOverlayEnabled == null) return;
+            tsmiOverlayEnabled.Checked = settings.OverlayEnabled ?? true;
+            tsmiOverlay.ToolTipText = overlayHub.IsRunning ? overlayHub.Url : "Overlay server is off";
+        }
+
+        private void CopyText(string text)
+        {
+            try { Clipboard.SetText(text); } catch { }
+        }
+        #endregion OBS Browser Source
 
         #region Resizeing
         private const int HTLEFT = 10;
@@ -204,18 +267,20 @@ namespace VSCView
             }
         }
 
+        private string settingsFile;
         private void LoadSettings()
         {
             string filename = "settings.json";
             if (instanceNumber > 0)
                 filename = $"settings.{instanceNumber}.json";
 
-            if (!File.Exists("settings.json")) File.Create("settings.json").Close();
-            settings = JsonConvert.DeserializeObject<Settings>(File.ReadAllText("settings.json")) ?? new Settings();
+            settingsFile = filename;
+            if (!File.Exists(filename)) File.Create(filename).Close();
+            settings = JsonConvert.DeserializeObject<Settings>(File.ReadAllText(filename)) ?? new Settings();
         }
         private void SaveSettings()
         {
-            File.WriteAllText("settings.json", JsonConvert.SerializeObject(settings));
+            File.WriteAllText(settingsFile ?? "settings.json", JsonConvert.SerializeObject(settings));
         }
         private void LoadThemes()
         {
@@ -518,6 +583,7 @@ namespace VSCView
             }).Start();
 
             ui?.InitalizeController();
+            overlayHub?.ControllerChanged();
         }
 
         private void AutoLoadController()
@@ -570,6 +636,7 @@ namespace VSCView
                 }).Start();
 
             ui?.InitalizeController();
+            overlayHub?.ControllerChanged();
             FirstControllerActivation = false;
         }
 
@@ -591,6 +658,8 @@ namespace VSCView
             }
 
             ui = new UI(ControllerData, Path.GetDirectoryName(path), skinJson);
+            currentThemeFile = path;
+            try { overlayHub?.SetMainTheme(path); } catch (Exception ex) { Debug.WriteLine("Overlay theme: " + ex); }
             if (!settings.CustomSize)
             {
                 this.Width = ui.Width;
@@ -679,6 +748,8 @@ namespace VSCView
         private void MainForm_FormClosed(object sender, FormClosedEventArgs e)
         {
             ttimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            overlayHub?.Dispose();
+            DeviceManager.Shutdown();
             ControllerMemoHack?.ToList()?.ForEach(dr =>
             {
                 dr.Value.Item1.DeInitalize();

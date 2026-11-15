@@ -9,7 +9,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ThemeFixer", "ThemeFixer\Th
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Deps", "Deps", "{23183836-1727-4615-A599-9776C3EBA608}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExtendInput", "Deps\ExtendInput\ExtendInput\ExtendInput\ExtendInput.csproj", "{4D027481-A0EA-41F3-9284-7353E2103CA6}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExtendInput", "Deps\ExtendInput.Build\ExtendInput.csproj", "{4D027481-A0EA-41F3-9284-7353E2103CA6}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

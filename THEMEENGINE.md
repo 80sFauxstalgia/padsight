@@ -143,6 +143,23 @@
   * `"grid_center"` = ControlButtonGrid(2, 2)
   * `"motion"` = ControlMotion()
 
+* Steam Controller (2026) (read through SDL3)
+  * `"quad_left"` = ControlDPad()
+  * `"quad_right"` = ControlButtonQuad()
+  * `"bumpers"` = ControlButtonPair()
+  * `"triggers"` = ControlTriggerPair(HasStage2: false)
+  * `"menu"` = ControlButtonPair() (`l` = View, `r` = Menu)
+  * `"home"` = ControlButton() (Steam button)
+  * `"qam"` = ControlButton() (Quick Access `...` button)
+  * `"stick_left"` = ControlStick(HasClick: true)
+  * `"stick_right"` = ControlStick(HasClick: true)
+  * `"stick_touch"` = ControlButtonPair() (capacitive thumbstick touch, `l` / `r`)
+  * `"touch_left"` = ControlTouchPressure()
+  * `"touch_right"` = ControlTouchPressure()
+  * `"grip"` = ControlButtonPair() (upper back buttons, L4 / R4)
+  * `"grip2"` = ControlButtonPair() (lower back buttons, L5 / R5)
+  * `"grip_sense"` = ControlButtonPair() (capacitive grip sense, `l` / `r`)
+
 ## Flee Variables
 * ControlTrigger
   * `analog` - 0.0 to 1.0 value
@@ -185,6 +202,12 @@
   * `0:touch` - finger #0 touching 0/1
   * `0:x` - -1.0 to 1.0 value for finger #0
   * `0:y` - -1.0 to 1.0 value for finger #0
+* ControlTouchPressure (single finger, 2026 Steam Controller trackpads)
+  * `click` - Pad clicked 0/1
+  * `0:touch` - finger touching 0/1
+  * `0:x` - -1.0 to 1.0 value
+  * `0:y` - -1.0 to 1.0 value
+  * `0:pressure` - 0.0 to 1.0 press force
 * ControlMotion (subject to change in future versions)
   * `accelerometer:x` - AccelerometerX
   * `accelerometer:y` - AccelerometerY

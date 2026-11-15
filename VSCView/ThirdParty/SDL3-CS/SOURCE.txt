@@ -1,0 +1,4 @@
+Source: https://github.com/flibitijibibo/SDL3-CS
+Commit: c42d07ed852beb522b0e3195ad0cc7884579ab0a
+File:   SDL3/SDL3.Legacy.cs (unmodified)
+License: zlib (see LICENSE in this folder)
