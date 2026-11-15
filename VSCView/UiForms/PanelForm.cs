@@ -85,7 +85,7 @@ namespace VSCView.UiForms
             core.NewWindowRequested += (s, e) => { e.Handled = true; OpenExternal(e.Uri); };
             core.NavigationStarting += (s, e) =>
             {
-                if (!e.Uri.StartsWith(origin, StringComparison.OrdinalIgnoreCase))
+                if (!IsOwnUrl(e.Uri, origin))
                 {
                     e.Cancel = true;
                     OpenExternal(e.Uri);
@@ -98,6 +98,20 @@ namespace VSCView.UiForms
             };
             ready = true;
             core.Navigate(url);
+        }
+
+        /// <summary>
+        /// True only for pages on the app's own server. Compares the parsed scheme, host and port, never a string
+        /// prefix: "http://127.0.0.1:47817@evil.example/" starts with the origin but its host is evil.example
+        /// (the "127.0.0.1:47817" part is user info), so URLs with any user info are refused outright.
+        /// </summary>
+        public static bool IsOwnUrl(string target, string origin)
+        {
+            if (!Uri.TryCreate(target, UriKind.Absolute, out Uri u) || !Uri.TryCreate(origin, UriKind.Absolute, out Uri o)) return false;
+            return u.Scheme == Uri.UriSchemeHttp
+                && string.IsNullOrEmpty(u.UserInfo)
+                && string.Equals(u.Host, o.Host, StringComparison.OrdinalIgnoreCase)
+                && u.Port == o.Port;
         }
 
         /// <summary>Point the panel at a new address (the server moved to another port).</summary>
