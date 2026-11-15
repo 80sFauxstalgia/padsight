@@ -41,7 +41,7 @@ How it works: VSCView renders the theme with its own renderer into an off-screen
 Requirements: Windows and the [.NET SDK](https://dotnet.microsoft.com/download) (8 or newer). The app itself targets .NET Framework 4.6.2, which is built into Windows 10 and 11.
 
 ```
-git clone --recursive https://github.com/80sFauxstalgia/VSCView
+git clone --recursive https://github.com/80sFauxstalgia/vscview-overlay
 cd VSCView
 dotnet build VSCView.sln -c Release
 ```
