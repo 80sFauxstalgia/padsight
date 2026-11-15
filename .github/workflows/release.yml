@@ -12,7 +12,6 @@ name: Release build
 on:
   push:
     tags: ['v*']
-    branches: ['feature/obs-browser-source'] # TEMPORARY: one dry run on the private repo; remove before merging
   workflow_dispatch:
 
 permissions:
