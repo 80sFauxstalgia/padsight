@@ -51,7 +51,7 @@ dotnet build VSCView.sln -c Release
 
 The first build downloads the official SDL3 release (`SDL3-3.4.20-win32-x64.zip` from github.com/libsdl-org/SDL) and checks its SHA-256 before using it. The output is in `VSCView/bin/Release/net462/`.
 
-The 2026 themes are generated from code. To regenerate them, install Pillow (`pip install pillow`) and run `python tools/theme-gen/gen_steamcontroller2026.py`.
+The Graphite and Vaporwave Pixel themes for both controllers are generated from code. To regenerate them, install Pillow (`pip install pillow`) and run `python tools/theme-gen/gen_steamcontroller2026.py` and `python tools/theme-gen/gen_steamcontroller2015.py`.
 
 ## Credits
 * **VSCView** and **ExtendInput** by [Nielk1 (John Klein)](https://github.com/Nielk1/VSCView), MIT. This project is a fork, and all the original rendering, theme engine and 2015 Steam Controller support is theirs.
@@ -111,6 +111,8 @@ The 2026 themes are generated from code. To regenerate them, install Pillow (`pi
   * Outline 2019 by [RambleTan](https://www.youtube.com/channel/UCYI8ifruvIqVtAY3joqlpfw)
   * Fire Sale by Nielk1, [Twenty-Six Twelve](https://www.reddit.com/user/Twenty-Six_Twelve/)
   * White Cerberus by [8BitCerberus](https://github.com/8BitCerberus/vscview-themes)
+  * Graphite (generated, this fork)
+  * Vaporwave Pixel (generated, this fork)
 * Valve Steam Controller (2026)
   * Graphite (generated, this fork)
   * Vaporwave Pixel (generated, this fork)
