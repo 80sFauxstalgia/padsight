@@ -8,9 +8,9 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyTitle("VSCView")]
 [assembly: AssemblyDescription("This application allows the viewing of raw input from the Steam Controller and various other controllers for use in on screen displays for videos and streams.")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("Nielk1")]
+[assembly: AssemblyCompany("Talaria Software LLC")]
 [assembly: AssemblyProduct("VSCView")]
-[assembly: AssemblyCopyright("John Klein © 2021")]
+[assembly: AssemblyCopyright("© 2018-2021 John Klein, © 2026 Talaria Software LLC")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
@@ -32,5 +32,5 @@ using System.Runtime.InteropServices;
 // You can specify all the values or you can default the Build and Revision Numbers
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("0.5.0.0")]
-[assembly: AssemblyFileVersion("0.5.0.0")]
+[assembly: AssemblyVersion("0.6.0.0")]
+[assembly: AssemblyFileVersion("0.6.0.0")]
