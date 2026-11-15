@@ -22,7 +22,7 @@ namespace VSCView
     /// </summary>
     public partial class MainForm
     {
-        public const string ProductName = "Padsight";
+        public const string ProductName = "PadSight";
 
         NotifyIcon tray;
         ToolStripMenuItem trayPreview;
@@ -44,6 +44,7 @@ namespace VSCView
             if (settings.ShowPreviewWindow == null)
                 settings.ShowPreviewWindow = !string.IsNullOrWhiteSpace(settings.Theme);
             startHidden = !(settings.ShowPreviewWindow ?? false);
+            Input.SdlSteamController.MotionEnabled = settings.Gyro2026 ?? true;
             AppIcon = LoadAppIcon();
             if (AppIcon != null) this.Icon = AppIcon;
             InitTray();
@@ -245,6 +246,22 @@ namespace VSCView
                 tsmiAutoSelectOnlyController.Checked = settings.AutoSelectOnlyController;
             }
             if (b["openPanelOnStart"] != null) settings.OpenPanelOnStart = (bool)b["openPanelOnStart"];
+            if (b["gyro2026"] != null)
+            {
+                settings.Gyro2026 = (bool)b["gyro2026"];
+                Input.SdlSteamController.MotionEnabled = settings.Gyro2026.Value;
+            }
+            if (b["gyro2015"] != null)
+            {
+                // The 2015 controller only sends motion after a settings write; it's re-applied on (re)initialise.
+                settings.HackScMotionOn = (bool)b["gyro2015"];
+                tsmiHackSCMotion.Checked = settings.HackScMotionOn;
+                if (ActiveController is SteamController sc)
+                {
+                    sc.EnableMotion = settings.HackScMotionOn;
+                    try { sc.DeInitalize(); sc.Initalize(); } catch (Exception ex) { Debug.WriteLine("SC motion: " + ex.Message); }
+                }
+            }
             if (b["setupDone"] != null) settings.SetupDone = (bool)b["setupDone"];
             if (b["accent"] != null)
             {
@@ -303,6 +320,7 @@ namespace VSCView
         #endregion
 
         #region State
+        /// <summary>Theme family folder -> the kind of controller it draws (see ControllerKind).</summary>
         private static readonly Dictionary<string, string> ThemeFamilyKinds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["steamcontroller"] = "DEVICE_SC",
@@ -310,10 +328,10 @@ namespace VSCView
             ["steamcontrollerchell"] = "DEVICE_SC_CHELL",
             ["dualshock4"] = "DEVICE_DS4",
             ["dualsense"] = "DEVICE_DS5",
-            ["xbox360controller"] = "DEVICE_GAMEPAD",
-            ["xboxwirelesscontroller"] = "DEVICE_GAMEPAD",
-            ["nintendoswitchprocontroller"] = "DEVICE_GAMEPAD",
-            ["nintendoswitchjoycon"] = "DEVICE_GAMEPAD",
+            ["xbox360controller"] = "DEVICE_XBOX",
+            ["xboxwirelesscontroller"] = "DEVICE_XBOX",
+            ["nintendoswitchprocontroller"] = "DEVICE_SWITCH",
+            ["nintendoswitchjoycon"] = "DEVICE_SWITCH",
             ["steamdeck"] = "DEVICE_DECK",
         };
 
@@ -324,6 +342,7 @@ namespace VSCView
             ("DEVICE_SC", "Steam Controller (2015)"),
             ("DEVICE_DS5", "DualSense"),
             ("DEVICE_DS4", "DualShock 4"),
+            ("DEVICEXBOX", "Xbox controller"),
             ("DEVICE_GAMEPAD", "Gamepad"),
         };
 
@@ -393,12 +412,15 @@ namespace VSCView
                     details = c.NameDetails,
                     kinds = c.ControllerTypeCode,
                     kindLabel = KindLabel(c),
+                    kind = ControllerKind(c),
+                    theme = ThemeSummary(c),
                     connection = c.ConnectionTypeCode?.FirstOrDefault(),
                     xinput = c is XInputController,
                     present = c.IsPresent,
                     selected = c == ActiveController,
                     reading,
                     inUse = idleMs != null && idleMs < 2000,
+                    motion = c.HasMotion,
                     live = st == null ? null : LiveInputs(st),
                 };
             }).ToList();
@@ -429,6 +451,8 @@ namespace VSCView
                     previewWindow = settings.ShowPreviewWindow ?? false,
                     setupDone = settings.SetupDone ?? false,
                     accent = settings.Accent,
+                    gyro2026 = settings.Gyro2026 ?? true,
+                    gyro2015 = settings.HackScMotionOn,
                     overlayPort = settings.OverlayPort ?? DefaultOverlayPort,
                 },
                 theme,
@@ -438,6 +462,16 @@ namespace VSCView
             return JsonConvert.SerializeObject(state);
         }
 
+        /// <summary>The theme this controller gets on the overlay (picked for its kind, or the default).</summary>
+        private object ThemeSummary(IController c)
+        {
+            string file = ThemeForKind(ControllerKind(c), out bool remembered);
+            string key = overlayHub.ThemeKey(file);
+            if (key == null) return null;
+            ThemeInfo t = ThemeList(false).FirstOrDefault(o => o.key == key);
+            return new { key, name = t == null ? key : $"{t.theme} · {t.variant}", remembered };
+        }
+
         /// <summary>Live values for the panel's controller cards (sticks, triggers, pads, pressed buttons).</summary>
         private static object LiveInputs(ControllerState s)
         {
@@ -445,6 +479,7 @@ namespace VSCView
             var triggers = new Dictionary<string, object>();
             var pads = new Dictionary<string, object>();
             var pressed = new List<string>();
+            object motion = null;
             if (s?.Controls != null)
             {
                 foreach (string k in s.Controls.Keys)
@@ -464,6 +499,10 @@ namespace VSCView
                                 pads[k] = new { touch = touching, x = touching ? Math.Round(tc.X[i], 3) : 0, y = touching ? Math.Round(tc.Y[i], 3) : 0, p = 0.0, click = tc.Click };
                             }
                             break;
+                        case ControlMotion mo:
+                            // Angular velocity in deg/s (raw counts are 16.4 per deg/s, as on the 2015 controller).
+                            motion = new { x = Math.Round(mo.AngularVelocityX / 16.4, 1), y = Math.Round(mo.AngularVelocityY / 16.4, 1), z = Math.Round(mo.AngularVelocityZ / 16.4, 1) };
+                            break;
                         case Input.ControlTouchPressure tp:
                             pads[k] = new { touch = tp.Touch, x = Math.Round(tp.X, 3), y = Math.Round(tp.Y, 3), p = Math.Round(tp.Pressure, 3), click = tp.Click };
                             break;
@@ -476,7 +515,7 @@ namespace VSCView
                     pressed.Add(p);
                 }
             }
-            return new { sticks, triggers, pads, pressed };
+            return new { sticks, triggers, pads, pressed, motion };
         }
         #endregion
     }

@@ -7,20 +7,20 @@
     {
       "type": "image",
       "image": "trigger_l.png",
-      "x": 232.0,
-      "y": 52.0,
-      "width": 180,
-      "height": 76,
+      "x": 258.0,
+      "y": 68.0,
+      "width": 194,
+      "height": 96,
       "center": true,
       "winform.interpolation": "HighQualityBicubic"
     },
     {
       "type": "pbar",
       "image": "trigger_l_fill.png",
-      "x": 232.0,
-      "y": 52.0,
-      "width": 180,
-      "height": 76,
+      "x": 258.0,
+      "y": 68.0,
+      "width": 194,
+      "height": 96,
       "center": true,
       "direction": "up",
       "input": "triggers:l:analog",
@@ -33,10 +33,10 @@
         {
           "type": "image",
           "image": "trigger_l_click.png",
-          "x": 232.0,
-          "y": 52.0,
-          "width": 180,
-          "height": 76,
+          "x": 258.0,
+          "y": 68.0,
+          "width": 194,
+          "height": 96,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -45,20 +45,20 @@
     {
       "type": "image",
       "image": "trigger_r.png",
-      "x": 768.0,
-      "y": 52.0,
-      "width": 180,
-      "height": 76,
+      "x": 742.0,
+      "y": 68.0,
+      "width": 194,
+      "height": 96,
       "center": true,
       "winform.interpolation": "HighQualityBicubic"
     },
     {
       "type": "pbar",
       "image": "trigger_r_fill.png",
-      "x": 768.0,
-      "y": 52.0,
-      "width": 180,
-      "height": 76,
+      "x": 742.0,
+      "y": 68.0,
+      "width": 194,
+      "height": 96,
       "center": true,
       "direction": "up",
       "input": "triggers:r:analog",
@@ -71,10 +71,10 @@
         {
           "type": "image",
           "image": "trigger_r_click.png",
-          "x": 768.0,
-          "y": 52.0,
-          "width": 180,
-          "height": 76,
+          "x": 742.0,
+          "y": 68.0,
+          "width": 194,
+          "height": 96,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -83,10 +83,10 @@
     {
       "type": "image",
       "image": "bumper_l.png",
-      "x": 232.0,
-      "y": 112.0,
-      "width": 208,
-      "height": 40,
+      "x": 257.5,
+      "y": 168.5,
+      "width": 281,
+      "height": 97,
       "center": true,
       "winform.interpolation": "HighQualityBicubic"
     },
@@ -97,10 +97,10 @@
         {
           "type": "image",
           "image": "bumper_l_on.png",
-          "x": 232.0,
-          "y": 112.0,
-          "width": 208,
-          "height": 40,
+          "x": 257.5,
+          "y": 168.5,
+          "width": 281,
+          "height": 97,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -109,10 +109,10 @@
     {
       "type": "image",
       "image": "bumper_r.png",
-      "x": 768.0,
-      "y": 112.0,
-      "width": 208,
-      "height": 40,
+      "x": 742.5,
+      "y": 168.5,
+      "width": 281,
+      "height": 97,
       "center": true,
       "winform.interpolation": "HighQualityBicubic"
     },
@@ -123,10 +123,10 @@
         {
           "type": "image",
           "image": "bumper_r_on.png",
-          "x": 768.0,
-          "y": 112.0,
-          "width": 208,
-          "height": 40,
+          "x": 742.5,
+          "y": 168.5,
+          "width": 281,
+          "height": 97,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -136,9 +136,9 @@
       "type": "image",
       "image": "base.png",
       "x": 500.0,
-      "y": 425.0,
+      "y": 440.0,
       "width": 1000,
-      "height": 670,
+      "height": 640,
       "center": true,
       "winform.interpolation": "HighQualityBicubic"
     },
@@ -149,10 +149,10 @@
         {
           "type": "image",
           "image": "grip_l_on.png",
-          "x": 214.0,
-          "y": 560.0,
-          "width": 94,
-          "height": 158,
+          "x": 58.0,
+          "y": 576.0,
+          "width": 64,
+          "height": 106,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -165,10 +165,10 @@
         {
           "type": "image",
           "image": "grip_r_on.png",
-          "x": 786.0,
-          "y": 560.0,
-          "width": 94,
-          "height": 158,
+          "x": 942.0,
+          "y": 576.0,
+          "width": 64,
+          "height": 106,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -181,10 +181,10 @@
         {
           "type": "image",
           "image": "pad_dpad_n.png",
-          "x": 236.0,
-          "y": 186.0,
-          "width": 158,
-          "height": 88,
+          "x": 260.0,
+          "y": 248.5,
+          "width": 136,
+          "height": 75,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -197,10 +197,10 @@
         {
           "type": "image",
           "image": "pad_dpad_e.png",
-          "x": 302.0,
-          "y": 252.0,
-          "width": 88,
-          "height": 158,
+          "x": 316.5,
+          "y": 305.0,
+          "width": 75,
+          "height": 136,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -213,10 +213,10 @@
         {
           "type": "image",
           "image": "pad_dpad_s.png",
-          "x": 236.0,
-          "y": 318.0,
-          "width": 158,
-          "height": 88,
+          "x": 260.0,
+          "y": 361.5,
+          "width": 136,
+          "height": 75,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -229,10 +229,10 @@
         {
           "type": "image",
           "image": "pad_dpad_w.png",
-          "x": 170.0,
-          "y": 252.0,
-          "width": 88,
-          "height": 158,
+          "x": 203.5,
+          "y": 305.0,
+          "width": 75,
+          "height": 136,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -245,10 +245,10 @@
         {
           "type": "image",
           "image": "face_y.png",
-          "x": 612.0,
-          "y": 340.0,
-          "width": 56,
-          "height": 56,
+          "x": 598.0,
+          "y": 385.0,
+          "width": 54,
+          "height": 54,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -261,10 +261,10 @@
         {
           "type": "image",
           "image": "face_b.png",
-          "x": 662.0,
-          "y": 390.0,
-          "width": 56,
-          "height": 56,
+          "x": 647.0,
+          "y": 434.0,
+          "width": 54,
+          "height": 54,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -277,10 +277,10 @@
         {
           "type": "image",
           "image": "face_a.png",
-          "x": 612.0,
-          "y": 440.0,
-          "width": 56,
-          "height": 56,
+          "x": 598.0,
+          "y": 483.0,
+          "width": 54,
+          "height": 54,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -293,10 +293,10 @@
         {
           "type": "image",
           "image": "face_x.png",
-          "x": 562.0,
-          "y": 390.0,
-          "width": 56,
-          "height": 56,
+          "x": 549.0,
+          "y": 434.0,
+          "width": 54,
+          "height": 54,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -310,9 +310,9 @@
           "type": "image",
           "image": "steam_on.png",
           "x": 500.0,
-          "y": 226.0,
-          "width": 76,
-          "height": 76,
+          "y": 282.0,
+          "width": 74,
+          "height": 74,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -325,10 +325,10 @@
         {
           "type": "image",
           "image": "back_on.png",
-          "x": 420.0,
-          "y": 238.0,
-          "width": 56,
-          "height": 34,
+          "x": 424.0,
+          "y": 300.0,
+          "width": 68,
+          "height": 46,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
@@ -341,18 +341,18 @@
         {
           "type": "image",
           "image": "start_on.png",
-          "x": 580.0,
-          "y": 238.0,
-          "width": 56,
-          "height": 34,
+          "x": 576.0,
+          "y": 300.0,
+          "width": 68,
+          "height": 46,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         }
       ]
     },
     {
-      "x": 236,
-      "y": 252,
+      "x": 260,
+      "y": 305,
       "children": [
         {
           "type": "showhide",
@@ -363,8 +363,8 @@
               "image": "pad_click.png",
               "x": 0,
               "y": 0,
-              "width": 248,
-              "height": 248,
+              "width": 208,
+              "height": 208,
               "center": true,
               "winform.interpolation": "HighQualityBicubic"
             }
@@ -378,8 +378,8 @@
           "width": 36,
           "height": 36,
           "input": "touch_left:0:touch",
-          "inputX": "touch_left:0:x * 100",
-          "inputY": "touch_left:0:y * 100",
+          "inputX": "touch_left:0:x * 84",
+          "inputY": "touch_left:0:y * 84",
           "length": 24,
           "children": [
             {
@@ -403,8 +403,8 @@
       ]
     },
     {
-      "x": 764,
-      "y": 252,
+      "x": 740,
+      "y": 305,
       "children": [
         {
           "type": "showhide",
@@ -415,8 +415,8 @@
               "image": "pad_click.png",
               "x": 0,
               "y": 0,
-              "width": 248,
-              "height": 248,
+              "width": 208,
+              "height": 208,
               "center": true,
               "winform.interpolation": "HighQualityBicubic"
             }
@@ -430,8 +430,8 @@
           "width": 36,
           "height": 36,
           "input": "touch_right:0:touch",
-          "inputX": "touch_right:0:x * 100",
-          "inputY": "touch_right:0:y * 100",
+          "inputX": "touch_right:0:x * 84",
+          "inputY": "touch_right:0:y * 84",
           "length": 24,
           "children": [
             {
@@ -456,8 +456,8 @@
     },
     {
       "type": "slider",
-      "x": 388,
-      "y": 392,
+      "x": 405,
+      "y": 440,
       "inputX": "stick_left:x * 18",
       "inputY": "stick_left:y * 18",
       "children": [
@@ -466,8 +466,8 @@
           "image": "stick_cap.png",
           "x": 0,
           "y": 0,
-          "width": 88,
-          "height": 88,
+          "width": 100,
+          "height": 100,
           "center": true,
           "winform.interpolation": "HighQualityBicubic"
         },
@@ -480,14 +480,28 @@
               "image": "stick_cap_on.png",
               "x": 0,
               "y": 0,
-              "width": 88,
-              "height": 88,
+              "width": 100,
+              "height": 100,
               "center": true,
               "winform.interpolation": "HighQualityBicubic"
             }
           ]
         }
       ]
+    },
+    {
+      "type": "basic3d1",
+      "image": "gyro.png",
+      "x": 500,
+      "y": 656,
+      "width": 174,
+      "height": 120,
+      "mode": "gyro",
+      "shadowl": "gyro_l.png",
+      "shadowr": "gyro_r.png",
+      "shadowu": "gyro_u.png",
+      "shadowd": "gyro_d.png",
+      "winform.interpolation": "HighQualityBicubic"
     }
   ]
 }

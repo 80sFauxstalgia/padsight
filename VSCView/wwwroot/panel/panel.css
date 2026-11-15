@@ -1,4 +1,4 @@
-/* Padsight control panel. System fonts only (no downloads): Bahnschrift for display, Segoe UI for text,
+/* PadSight control panel. System fonts only (no downloads): Bahnschrift for display, Segoe UI for text,
    Cascadia Mono / Consolas for labels. The accent is a setting (--accent). */
 :root {
   --bg: #070b16;

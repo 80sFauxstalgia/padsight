@@ -280,9 +280,49 @@ namespace VSCView
             return s;
         }
 
-        /// <summary>Key used to remember a theme per kind of controller (e.g. DEVICE_SC, DEVICE_SC2026).</summary>
-        private static string ControllerKind(IController c) =>
-            c?.ControllerTypeCode?.FirstOrDefault(t => t != "DEVICE_NONE");
+        /// <summary>
+        /// The kind of controller, used to remember a theme per kind and to pick a matching default:
+        /// DEVICE_SC2026, DEVICE_SC (2015), DEVICE_SC_CHELL, DEVICE_DS5, DEVICE_DS4, DEVICE_XBOX (any XInput pad).
+        /// Hardware revisions (e.g. DEVICE_DS4V1/V2) share one kind. Null for an empty receiver slot.
+        /// </summary>
+        internal static string ControllerKind(IController c)
+        {
+            string[] codes = c?.ControllerTypeCode;
+            if (codes == null) return null;
+            foreach (var (code, kind) in KindCodes)
+                if (codes.Contains(code)) return kind;
+            return codes.FirstOrDefault(t => t != "DEVICE_NONE");
+        }
+
+        private static readonly (string code, string kind)[] KindCodes =
+        {
+            ("DEVICE_SC2026", "DEVICE_SC2026"), ("DEVICE_SC_CHELL", "DEVICE_SC_CHELL"), ("DEVICE_SC", "DEVICE_SC"),
+            ("DEVICE_DS5", "DEVICE_DS5"), ("DEVICE_DS4", "DEVICE_DS4"), ("DEVICEXBOX", "DEVICE_XBOX"),
+        };
+
+        /// <summary>Which kind of controller a theme file is drawn for (from its family folder), or null for general themes.</summary>
+        internal static string ThemeKind(string themeFile)
+        {
+            if (themeFile == null) return null;
+            string full = Path.GetFullPath(themeFile), themes = Path.GetFullPath("themes") + Path.DirectorySeparatorChar;
+            if (!full.StartsWith(themes, StringComparison.OrdinalIgnoreCase)) return null;
+            string family = full.Substring(themes.Length).Split(Path.DirectorySeparatorChar)[0];
+            return ThemeFamilyKinds.TryGetValue(family, out string kind) ? kind : null;
+        }
+
+        /// <summary>The theme a controller kind gets: the one the user picked for it, else a built-in default.</summary>
+        internal string ThemeForKind(string kind, out bool remembered)
+        {
+            remembered = false;
+            if (kind == null) return null;
+            if ((settings.RememberThemePerController ?? true) && settings.ThemeByController != null &&
+                settings.ThemeByController.TryGetValue(kind, out string file) && File.Exists(file))
+            {
+                remembered = true;
+                return file;
+            }
+            return DefaultThemeFor(kind);
+        }
 
         private void RememberThemeForActiveController(string themeFile)
         {
@@ -292,15 +332,22 @@ namespace VSCView
             settings.ThemeByController[kind] = themeFile;
         }
 
+        /// <summary>
+        /// Swap the overlay to the right look for the controller now on it: the theme picked for that kind before,
+        /// or, when the theme on screen is drawn for a different kind of controller (or none is loaded), the
+        /// built-in default for this kind. A general theme the user chose stays as it is.
+        /// </summary>
         private void ApplyRememberedTheme()
         {
             string kind = ControllerKind(ActiveController);
             if (kind == null) return;
-            string file = null;
-            bool remembered = (settings.RememberThemePerController ?? true) && settings.ThemeByController != null &&
-                              settings.ThemeByController.TryGetValue(kind, out file) && File.Exists(file);
-            // First run: nothing chosen yet, so show a sensible default instead of an empty overlay.
-            if (!remembered) file = currentThemeFile == null ? DefaultThemeFor(kind) : null;
+            string file = ThemeForKind(kind, out bool remembered);
+            if (!remembered)
+            {
+                string shownKind = ThemeKind(currentThemeFile);
+                bool wrongKind = currentThemeFile == null || (shownKind != null && shownKind != kind);
+                if (!wrongKind) return;
+            }
             if (file == null) return;
             if (currentThemeFile != null && Path.GetFullPath(file).Equals(Path.GetFullPath(currentThemeFile), StringComparison.OrdinalIgnoreCase)) return;
             if (InvokeRequired) BeginInvoke(new Action(() => LoadThemeSafe(file)));
@@ -308,13 +355,17 @@ namespace VSCView
         }
 
         /// <summary>A built-in theme for a kind of controller, used until the user picks one.</summary>
-        private static string DefaultThemeFor(string kind)
+        internal static string DefaultThemeFor(string kind)
         {
             string[] candidates;
             switch (kind)
             {
-                case "DEVICE_SC2026": candidates = new[] { @"themes\steamcontroller2026\graphite\Full.json" }; break;
-                case "DEVICE_SC": candidates = new[] { @"themes\steamcontroller\graphite\Full.json" }; break;
+                case "DEVICE_SC2026": candidates = new[] { @"themes\steamcontroller2026\realistic\Full.json", @"themes\steamcontroller2026\graphite\Full.json" }; break;
+                case "DEVICE_SC": candidates = new[] { @"themes\steamcontroller\realistic\Full.json", @"themes\steamcontroller\graphite\Full.json" }; break;
+                case "DEVICE_SC_CHELL": candidates = new[] { @"themes\steamcontrollerchell\default\all.json" }; break;
+                case "DEVICE_DS5": candidates = new[] { @"themes\dualsense\default\midnight black\All.json" }; break;
+                case "DEVICE_DS4": candidates = new[] { @"themes\dualshock4\default\V2\jet black\all.json" }; break;
+                case "DEVICE_XBOX": candidates = new[] { @"themes\xboxwirelesscontroller\default\Xbox One S\XB1 S (Black).json", @"themes\xbox360controller\default\XB360 (Black).json" }; break;
                 default: return null;
             }
             return candidates.FirstOrDefault(File.Exists);

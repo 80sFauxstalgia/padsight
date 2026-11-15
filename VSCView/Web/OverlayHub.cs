@@ -74,7 +74,9 @@ namespace VSCView.Web
             if (file == null) return null;
             lock (previewLock)
             {
-                if (previews.TryGetValue(file, out byte[] cached)) return cached;
+                // Keyed by the layout's last write time, so an edited theme gets a fresh preview.
+                string cacheKey = file + "|" + File.GetLastWriteTimeUtc(file).Ticks;
+                if (previews.TryGetValue(cacheKey, out byte[] cached)) return cached;
                 byte[] png = null;
                 try
                 {
@@ -95,7 +97,7 @@ namespace VSCView.Web
                 }
                 catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Preview {rel}: {ex.Message}"); }
                 if (previews.Count > 200) previews.Clear();
-                previews[file] = png;
+                previews[cacheKey] = png;
                 return png;
             }
         }

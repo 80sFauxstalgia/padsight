@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Padsight Overlay</title>
+<title>PadSight Overlay</title>
 <style>
   /* Fully transparent page: OBS Browser Sources composite it with real alpha, no chroma key needed. */
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
@@ -101,7 +101,7 @@
     let opened = false;
     ws.addEventListener('open', () => { opened = true; });
     ws.onclose = () => {
-      setStatus('Padsight not running – retrying…');
+      setStatus('PadSight not running – retrying…');
       if (!opened && params.has('theme')) {
         // The server is up but refused the socket: almost always a wrong theme path.
         fetch('/status.json', { cache: 'no-store' })

@@ -1,4 +1,4 @@
-"""Draws the Padsight app icon (VSCView/padsight.ico): a controller pill with two sticks, cyan on navy.
+"""Draws the PadSight app icon (VSCView/padsight.ico): a controller pill with two sticks, cyan on navy.
 
 Original artwork, drawn here so the repo needs no external assets. Usage: python gen_app_icon.py
 """

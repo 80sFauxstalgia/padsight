@@ -1,4 +1,4 @@
-// Padsight control panel. Talks only to the local app (same origin) through /api/*, with the per-install key
+// PadSight control panel. Talks only to the local app (same origin) through /api/*, with the per-install key
 // that the app passes in the URL fragment. Plain DOM code, no third-party scripts.
 'use strict';
 (() => {
@@ -117,7 +117,7 @@
     return out;
   }
   // Primary kind only: the 2026 controller also lists DEVICE_SC so older themes can bind to it.
-  const myKinds = () => new Set(visibleControllers().map(c => (c.kinds || [])[0]).filter(Boolean));
+  const myKinds = () => new Set(visibleControllers().map(c => c.kind).filter(Boolean));
 
   // ---------------------------------------------------------------- navigation
   function go(r, step) {
@@ -178,7 +178,7 @@
       <h2 class="label">Overlay and OBS</h2><div class="grid auto-fill" id="helpOverlay"></div>
       <h2 class="label">Questions</h2>
       <div class="grid auto-fill">
-        <div class="card"><h3>Does this change how games see my controller?</h3><p class="sub">Padsight only reads input. It doesn’t remap or block buttons, and Steam can keep running.</p></div>
+        <div class="card"><h3>Does this change how games see my controller?</h3><p class="sub">PadSight only reads input. It doesn’t remap or block buttons, and Steam can keep running.</p></div>
         <div class="card"><h3>Why is there no green screen?</h3><p class="sub">OBS Browser Sources support real transparency, so the overlay sits on your scene as it is. No chroma key needed.</p></div>
         <div class="card"><h3>Does anything leave this PC?</h3><p class="sub">No. The server listens on 127.0.0.1 only, and the panel's controls need a key that only this app knows.</p></div>
       </div>
@@ -198,12 +198,14 @@
             ${toggle('followMode', s.followMode, 'Follow the controller in use', 'Switch the overlay to whichever controller you pick up. The current one has to be idle for 2 seconds first.')}
             ${toggle('rememberThemePerController', s.rememberThemePerController, 'Remember a theme per controller', 'Each kind of controller keeps its own look.')}
             ${toggle('autoSelect', s.autoSelect, 'Pick the only controller automatically', 'When exactly one controller is connected, show it without asking.')}
+            ${toggle('gyro2026', s.gyro2026, 'Gyro on the 2026 Steam Controller', 'Feeds motion to themes with a gyro display.')}
+            ${toggle('gyro2015', s.gyro2015, 'Gyro on the 2015 Steam Controller', 'Turns on the controller\u2019s motion reports while PadSight reads it, and back off when it stops.')}
           </div>
         </section>
         <section class="card" aria-label="App">
           <h2 class="label">App</h2>
           <div>
-            ${toggle('openPanelOnStart', s.openPanelOnStart, 'Open this panel when Padsight starts', 'Otherwise it starts in the tray. Click the tray icon to open the panel.')}
+            ${toggle('openPanelOnStart', s.openPanelOnStart, 'Open this panel when PadSight starts', 'Otherwise it starts in the tray. Click the tray icon to open the panel.')}
             ${toggle('previewWindow', s.previewWindow, 'Desktop preview window', 'The classic borderless window that draws the controller on your desktop. OBS doesn’t need it.')}
           </div>
         </section>
@@ -243,7 +245,7 @@
 
   function setupPage() {
     if (setupStep === 1) return `
-      ${stepHeader(1, 'Pick up a controller and press any button.', 'Padsight finds Steam Controllers on its own. Steam can keep running; Padsight only reads input and doesn’t remap anything.')}
+      ${stepHeader(1, 'Pick up a controller and press any button.', 'PadSight finds Steam Controllers on its own. Steam can keep running; PadSight only reads input and doesn’t remap anything.')}
       <div class="grid cols-2">
         <section class="grid" style="align-content:start" aria-label="Controllers"><div class="grid" id="ctrls"></div>
           <p class="small">Using something else? DualShock, DualSense and Xbox-style pads work too. <button class="link" type="button" data-act="nav" data-to="help">Not seeing your controller?</button></p></section>
@@ -365,7 +367,7 @@
       </section>
       <section class="card" aria-label="OBS dock">
         <h2 class="label">Control it from inside OBS</h2>
-        <p class="sub">This panel also works as an OBS dock. In OBS, open <b>Docks › Custom Browser Docks</b>, name it Padsight and paste the dock URL. Then you can switch themes or controllers mid-stream without leaving OBS.</p>
+        <p class="sub">This panel also works as an OBS dock. In OBS, open <b>Docks › Custom Browser Docks</b>, name it PadSight and paste the dock URL. Then you can switch themes or controllers mid-stream without leaving OBS.</p>
         <div class="copy"><code>${esc(origin)}/panel/#k=••••••&amp;dock=1</code><button class="btn" type="button" data-act="copy-dock">Copy dock URL</button></div>
         <p class="small">The dock URL contains this PC's panel key. Paste it only into OBS, and don't show it on stream.</p>
       </section>`;
@@ -436,6 +438,7 @@
       sticks: Object.keys(l.sticks || {}).sort((a, b) => order(a) - order(b)),
       pads: Object.keys(l.pads || {}).sort((a, b) => order(a) - order(b)),
       triggers: Object.keys(l.triggers || {}),
+      motion: !!(c.motion && l.motion),
     };
   }
 
@@ -447,6 +450,7 @@
         ${g.sticks.map(k => `<div class="gauge"><div class="well round" data-g="s:${esc(k)}"><i></i></div><span>${gaugeLabel(k)}</span></div>`).join('')}
         ${g.pads.map(k => `<div class="gauge"><div class="well square" data-g="p:${esc(k)}"><i></i></div><span>${gaugeLabel(k)}</span></div>`).join('')}
         ${g.triggers.map(k => `<div class="gauge"><div class="bars" data-g="t:${esc(k)}"><div class="bar"><i></i></div><div class="bar"><i></i></div></div><span>${gaugeLabel(k)}</span></div>`).join('')}
+        ${g.motion ? `<div class="gauge"><div class="well round" data-g="m:motion"><i></i></div><span>GYRO</span></div>` : ''}
       </div>
       <div class="chips" data-chips="${esc(c.id)}"></div>` :
       `<p class="small">Not being read. ${c.selected ? '' : 'Press something on it, or put it on the overlay.'}</p>`;
@@ -454,7 +458,8 @@
         ${c.selected ? '' : `<button class="btn small" type="button" data-act="use-ctrl" data-id="${esc(c.id)}">Put this one on the overlay</button>`}
         <button class="btn small" type="button" data-act="identify" data-id="${esc(c.id)}" title="Makes the controller buzz or flash so you can tell which one it is">Find it</button></div>`;
     return `<article class="card ${c.selected ? 'hud on' : ''}" data-id="${esc(c.id)}">
-      <div class="ctrl-head"><div><h3>${esc(c.kindLabel)}</h3><p class="small">${esc(connectionLabel(c))}${c.name && c.name !== c.kindLabel ? ' · ' + esc(c.name) : ''}</p></div>
+      <div class="ctrl-head"><div><h3>${esc(c.kindLabel)}</h3><p class="small">${esc(connectionLabel(c))}${c.name && c.name !== c.kindLabel ? ' · ' + esc(c.name) : ''}</p>
+        ${c.theme ? `<p class="small">Skin: ${esc(c.theme.name)}${c.theme.remembered ? '' : ' (default)'}</p>` : ''}</div>
         <span class="tag ${tone}">${label}</span></div>
       ${live}${actions}</article>`;
   }
@@ -465,7 +470,7 @@
     const vis = visibleControllers();
     const sleeping = sleepingReceivers();
     const hidden = hiddenVirtualPads();
-    const sig = JSON.stringify([vis.map(c => [c.id, c.selected, c.inUse, !!c.live, gaugeKeys(c)]), sleeping.map(s => s.kindLabel), hidden, compact]);
+    const sig = JSON.stringify([vis.map(c => [c.id, c.selected, c.inUse, !!c.live, gaugeKeys(c), c.theme && c.theme.key]), sleeping.map(s => s.kindLabel), hidden, compact]);
     if (sig !== lastSig.ctrls) {
       lastSig.ctrls = sig;
       let html = vis.map(c => controllerCard(c, compact)).join('');
@@ -503,6 +508,15 @@
       bl.firstElementChild.style.height = (t.l * 100).toFixed(0) + '%';
       br.firstElementChild.style.height = (t.r * 100).toFixed(0) + '%';
       bl.classList.toggle('full', !!t.l2); br.classList.toggle('full', !!t.r2);
+    }
+    if (l.motion) {
+      const w = $('[data-g="m:motion"]', root);
+      if (w) {
+        // Angular velocity: turning left/right moves the dot sideways, tilting forward/back moves it up/down.
+        const k = v => Math.max(-1, Math.min(1, v / 360));
+        w.firstElementChild.style.transform = `translate(${(-k(l.motion.z) * 25).toFixed(1)}px, ${(-k(l.motion.x) * 25).toFixed(1)}px)`;
+        w.classList.toggle('idle', Math.abs(l.motion.x) + Math.abs(l.motion.y) + Math.abs(l.motion.z) < 6);
+      }
     }
     const chips = $(`[data-chips="${CSS.escape(c.id)}"]`);
     if (chips) {
@@ -575,7 +589,7 @@
     const vis = visibleControllers();
     const ctrl = [];
     for (const c of vis) {
-      if (c.selected) ctrl.push(helpCard('ok', 'ON OVERLAY', `${c.kindLabel}: connected and on the overlay`, 'Padsight is reading it, and the overlay follows its inputs.'));
+      if (c.selected) ctrl.push(helpCard('ok', 'ON OVERLAY', `${c.kindLabel}: connected and on the overlay`, 'PadSight is reading it, and the overlay follows its inputs.'));
       else ctrl.push(helpCard('info', 'STANDBY', `${c.kindLabel}: connected, not on the overlay`, s.settings.followMode ? 'Follow mode switches to it as soon as you press something on it.' : 'Turn on follow mode in Settings, or put it on the overlay by hand.',
         `<button class="btn small" type="button" data-act="use-ctrl" data-id="${esc(c.id)}">Use this one now</button>`));
     }
@@ -611,7 +625,7 @@
       `SDL ${s.sdl || 'not started'}`,
       `Server 127.0.0.1:${s.server.port} · ${s.server.running ? 'local only' : 'off'}`,
       `Render ${render.toFixed(1)} ms · PNG ${png.toFixed(1)} ms`,
-      `Padsight ${s.version} · based on VSCView by Nielk1`,
+      `PadSight ${s.version} · based on VSCView by Nielk1`,
     ].map(t => `<span>${esc(t)}</span>`).join('');
     if ($('#diag').innerHTML !== diag) $('#diag').innerHTML = diag;
   }
@@ -700,14 +714,14 @@
       if (!e.status) console.error(e);
       failures++;
       if (e.status === 401) {
-        $('#offlineText').textContent = 'This page has no valid panel key. Open the panel from Padsight itself, or copy the dock URL again from its OBS page.';
+        $('#offlineText').textContent = 'This page has no valid panel key. Open the panel from PadSight itself, or copy the dock URL again from its OBS page.';
         $('#offline').hidden = false;
       } else if (failures > 3) $('#offline').hidden = false;
     }
     setTimeout(tick, document.hidden ? 1000 : fastPage() ? 100 : 400);
   }
   if (!KEY) {
-    $('#offlineText').textContent = 'This page has no panel key. Open the panel from Padsight itself (its window or tray icon).';
+    $('#offlineText').textContent = 'This page has no panel key. Open the panel from PadSight itself (its window or tray icon).';
     $('#offline').hidden = false;
   } else tick();
 })();

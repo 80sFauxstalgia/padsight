@@ -36,5 +36,6 @@ namespace VSCView
         public bool? ShowPreviewWindow { get; set; }  // the classic borderless window
         public bool? SetupDone { get; set; }
         public string Accent { get; set; }            // "#rrggbb", null = default cyan
+        public bool? Gyro2026 { get; set; }           // read the 2026 controller's gyro (default on)
     }
 }

@@ -88,9 +88,10 @@ The panel's **Settings** page covers follow mode, per-controller themes, auto-se
 ## Controller notes
 * **2026 Steam Controller.** VSCView reads it through [SDL3](https://www.libsdl.org/), over USB or the wireless puck.
   * It appears in the **Controller** menu as *Steam Controller (2026)*.
-  * Gyro display is not supported for it yet.
+  * Its gyro and accelerometer are read and fused into an orientation, so themes with a gyro display tilt with the controller. Turn it off in the panel's **Settings** if you don't want it.
   <!-- VERIFY on hardware before release: "works while Steam is running with Steam Input enabled". -->
-* **Original (2015) Steam Controller.** Read through VSCView's established HID decoder, as before.
+* **Original (2015) Steam Controller.** Read through VSCView's established HID decoder, as before. Its gyro is off by default because reading it changes a controller setting while VSCView runs; turn on **Settings › Gyro on the 2015 Steam Controller** in the panel to show it.
+* **Skins follow the controller.** Each kind of controller (2015 or 2026 Steam Controller, Xbox/XInput, DualShock 4, DualSense) gets its own skin: the one you last picked while using it, or a built-in default. When follow mode switches controllers, the overlay switches skin with it.
 * SDL3 is only allowed to touch the 2026 Steam Controller:
   * it never opens other gamepads, so it can't change their LEDs or rumble;
   * it ignores Steam's virtual Xbox controllers;
