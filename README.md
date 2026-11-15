@@ -1,68 +1,122 @@
-# VSCView
-On-screen Controller Overlay for Steam Controller and various other controllers.
+# VSCView (OBS edition)
 
-This fork adds:
-* **The 2026 Steam Controller**, read natively through [SDL3](https://www.libsdl.org/): both trackpads (position, click and pressure), thumbstick touch, all four back buttons (L4/L5/R4/R5) and grip sense.
-* **An OBS Browser Source with real transparency.** No chroma key or green screen is needed.
-* **Theme Browser.** Every theme comes with a live preview. Use it in the window, or copy an OBS URL pinned to it.
-* **Settings dialog** for the OBS server, controllers and window.
-* **Follow mode.** With several controllers connected, VSCView switches to whichever one you are using, and to the theme you last used with that kind of controller. One OBS source covers every game.
-* **SDK-style projects.** `dotnet build` works with only the .NET SDK installed.
+On-screen controller overlay for streams and videos, with first-class support for **both Steam Controllers**:
+- the original 2015 controller;
+- the 2026 controller.
 
-The original 2015 Steam Controller keeps using VSCView's existing HID decoder, which already reports real trackpad touch positions and both rear grips.
+OBS shows it as a **transparent Browser Source**, so no green screen or chroma key is needed.
 
-## OBS setup (Browser Source, no chroma key)
-1. Start VSCView. Right-click the window and open **Theme Browser…** (or **Theme**) to pick a theme. With follow mode on (the default), just press a button on the controller you are using.
-2. Right-click, open **OBS Browser Source**, and choose **Copy URL (follows window theme)**. The default URL is `http://127.0.0.1:47817/`.
-3. In OBS, add a source: **+** > **Browser**.
-   * **URL**: paste the copied URL.
-   * **Width / Height**: the theme size, e.g. `1000` x `760` for the 2026 themes or `995` x `720` for the Steam Controller default theme. You can resize the source in the scene afterwards.
-   * Leave **Custom CSS** at its default. The page background is already transparent.
-   * Optional: tick **Shutdown source when not visible** so VSCView only renders while the source is on screen.
-4. Done. The controller is composited with real alpha. You can minimise the VSCView window, but keep the app running.
+This is a fork of [Nielk1/VSCView](https://github.com/Nielk1/VSCView). Every original theme and controller still works.
 
-URL options:
+<!-- SCREENSHOT: hero image, docs/screenshots/hero.png. Both controllers side by side in OBS over gameplay (Graphite 2026 + Vaporwave 2015), no green fringe. -->
 
-| Option | Example | Effect |
+## Features
+- **Real Steam Controller input.**
+  - Both controllers: real trackpad touch positions and trails, and the rear grips / back buttons.
+  - 2026 controller extras: trackpad pressure, capacitive thumbstick touch, all four back buttons (L4/L5/R4/R5) and grip sense.
+- **True transparency in OBS.** VSCView streams its own rendering to a Browser Source over a local WebSocket, with no chroma-key fringing.
+- **Follow mode.** With both controllers connected, the overlay switches to the one you are using, along with the theme you last used for that kind of controller. One OBS source covers every game.
+- **Theme Browser** with live previews, plus new Graphite and Vaporwave Pixel themes for both Steam Controllers.
+- **Private by design.** The overlay server only listens on `127.0.0.1` (this PC) and sends nothing anywhere else.
+
+## Quick start
+1. Download the latest release zip, extract it anywhere, and run `VSCView.exe`.
+   * Requires Windows 10 or 11. The .NET Framework 4.8 it needs is built in.
+2. Right-click the window and open **Theme Browser…**. Pick a theme for your controller, then **Use in window**.
+3. Press any button on your controller. With follow mode on (the default), VSCView picks it up automatically.
+4. Add it to OBS as described below.
+
+<!-- SCREENSHOT: docs/screenshots/theme-browser.png. Theme Browser with the 2026 Graphite theme selected. -->
+
+## Adding it to OBS
+1. In VSCView, right-click and choose **OBS Browser Source › Copy URL (follows window theme)**. The default URL is `http://127.0.0.1:47817/`.
+2. In OBS, under **Sources**, click **+** › **Browser** › **Create new**. Then set:
+   * **URL**: paste the URL.
+   * **Width × Height**: the theme size, e.g. **1000 × 760** for the Graphite and Vaporwave themes, or **995 × 720** for the original Steam Controller default theme. The Theme Browser shows each theme's size.
+   * **Custom CSS**: leave the default. The page is already transparent.
+   * Optional: tick **Shutdown source when not visible**, so VSCView renders nothing while the overlay is off screen.
+3. Click **OK**, then move and scale the source like any other.
+
+<!-- SCREENSHOT: docs/screenshots/obs-properties.png. OBS Browser Source properties filled in. -->
+<!-- SCREENSHOT: docs/screenshots/obs-scene.png. Overlay over gameplay in an OBS scene. -->
+
+You can minimise the VSCView window, but keep it running. If VSCView closes, the source simply goes transparent, and it reconnects on its own when VSCView starts again.
+
+### URL options
+| Option | Example | What it does |
 | --- | --- | --- |
-| `theme` | `?theme=steamcontroller2026/graphite/Full.json` | Pin this source to one theme, independent of the window. The path is relative to the `themes` folder. **Copy URL (pinned to current theme)** builds it for you. |
+| `theme` | `?theme=steamcontroller2026/graphite/Full.json` | Pins this source to one theme, independent of the window. The path is relative to the `themes` folder. **Copy URL (pinned to current theme)** and the Theme Browser's **Copy OBS URL** build it for you. |
 | `fps` | `&fps=30` | Render rate for this source (default 60). |
-| `align` | `&align=bottom` | Where the image sits inside a source that has a different aspect ratio (`left`, `right`, `top`, `bottom`). |
-| `status` | `&status=1` | Show the connection status (for troubleshooting; hidden by default). |
+| `align` | `&align=bottom` | Where the image sits when the source's aspect ratio differs from the theme: `left`, `right`, `top` or `bottom`. |
+| `status` | `&status=1` | Shows the connection status in a corner (troubleshooting). |
 
-Several Browser Sources can point at different `theme` URLs at the same time. Every source shows the controller selected in the VSCView window.
+Several Browser Sources can show different themes at the same time. All of them follow the controller selected in VSCView.
 
-How it works: VSCView renders the theme with its own renderer into an off-screen transparent bitmap. A small built-in server streams changed frames as PNGs over a WebSocket, and the page draws them onto a `<canvas>`. Nothing is rendered while no source is connected, and identical frames are not re-sent. The server listens on **127.0.0.1 only**. It is not reachable from your network, and requests with a non-local `Host` or `Origin` are refused.
+### Settings
+Right-click › **Settings…**:
+* **OBS Browser Source**: on/off, port, frame rate, the URL to copy, and live status (connected sources, render and encode time per frame).
+* **Controllers**:
+  * auto-select a lone controller;
+  * follow the controller in use;
+  * remember a theme per kind of controller.
+* **Window**: background colour. This only matters for the old chroma-key workflow; OBS Browser Sources are transparent anyway.
 
-**Settings…** (or **OBS Browser Source** > **Status...**) shows render/encode timings and the SDL3 status. Disable the server with **OBS Browser Source > Enabled**. To change the port, set `"OverlayPort"` in `settings.json`. A second VSCView instance uses port + 1.
+<!-- SCREENSHOT: docs/screenshots/settings.png -->
 
-## Controller support notes
-* **2026 Steam Controller**: works over USB or the wireless puck, including while Steam is running with Steam Input. SDL3 is set up to touch only this controller: every other HIDAPI driver is disabled, and the XInput, RawInput, WGI, GameInput and DirectInput backends are off, so Steam's virtual Xbox pads are never picked up. It appears in the **Controller** menu as *Steam Controller (2026)*. Motion is not shown for it yet.
-* **2015 Steam Controller**: unchanged, via HID. SDL3's own 2015-controller driver is deliberately not used. It does not expose trackpad touch, and it switches the controller back to lizard mode when it closes.
+## Controller notes
+* **2026 Steam Controller.** VSCView reads it through [SDL3](https://www.libsdl.org/), over USB or the wireless puck.
+  * It appears in the **Controller** menu as *Steam Controller (2026)*.
+  * Gyro display is not supported for it yet.
+  <!-- VERIFY on hardware before release: "works while Steam is running with Steam Input enabled". -->
+* **Original (2015) Steam Controller.** Read through VSCView's established HID decoder, as before.
+* SDL3 is only allowed to touch the 2026 Steam Controller:
+  * it never opens other gamepads, so it can't change their LEDs or rumble;
+  * it ignores Steam's virtual Xbox controllers;
+  * it leaves the 2015 controller to the HID decoder.
 
-## Building
-Requirements: Windows and the [.NET SDK](https://dotnet.microsoft.com/download) (8 or newer). The app itself targets .NET Framework 4.6.2, which is built into Windows 10 and 11.
+## Troubleshooting
+* **The OBS source is empty.**
+  * Check that VSCView is running and has a theme loaded.
+  * Add `&status=1` to the URL to see whether it connects.
+  * Open the URL in a normal browser: you should see the controller.
+* **"Could not listen on 127.0.0.1:47817".** Another program is using the port. Pick another one in **Settings…** and update the URL in OBS.
+* **The 2026 controller is not in the Controller menu.**
+  * **Settings…** shows the SDL3 status line.
+  * Make sure `SDL3.dll` is next to `VSCView.exe`.
+  * Turn the controller on, or plug it in, while VSCView is running. It is detected within a second.
+* **The overlay is on the wrong controller.** Press a button on the one you're using; follow mode switches after the other has been idle for 2 seconds. Or pick it from the **Controller** menu.
+* **CPU use.**
+  * Rendering only happens while a source is connected, and unchanged frames are skipped.
+  * Lower the frame rate in **Settings…** or with `&fps=30` if needed.
+
+## Building from source
+Requirements: Windows and the [.NET SDK](https://dotnet.microsoft.com/download), version 8 or newer. Then:
 
 ```
 git clone --recursive https://github.com/80sFauxstalgia/vscview-overlay
-cd VSCView
+cd vscview-overlay
 dotnet build VSCView.sln -c Release
 ```
 
-The first build downloads the official SDL3 release (`SDL3-3.4.20-win32-x64.zip` from github.com/libsdl-org/SDL) and checks its SHA-256 before using it. The output is in `VSCView/bin/Release/net462/`.
+The output lands in `VSCView/bin/Release/net462/`.
 
-The Graphite and Vaporwave Pixel themes for both controllers are generated from code. To regenerate them, install Pillow (`pip install pillow`) and run `python tools/theme-gen/gen_steamcontroller2026.py` and `python tools/theme-gen/gen_steamcontroller2015.py`.
+On the first build, MSBuild downloads the official SDL3 release:
+* `SDL3-3.4.20-win32-x64.zip` from `github.com/libsdl-org/SDL`;
+* it is checked against a pinned SHA-256 before use (see `VSCView/VSCView.csproj`).
 
-## Credits
-* **VSCView** and **ExtendInput** by [Nielk1 (John Klein)](https://github.com/Nielk1/VSCView), MIT. This project is a fork, and all the original rendering, theme engine and 2015 Steam Controller support is theirs.
-* Original themes by the authors listed below.
-* [SDL3](https://www.libsdl.org/), zlib license. It is downloaded at build time and its license ships as `licenses/SDL3.txt`.
-* [SDL3-CS](https://github.com/flibitijibibo/SDL3-CS) C# bindings, zlib license, vendored unmodified in `VSCView/ThirdParty/SDL3-CS`.
-* The 2026 controller's protocol was cross-checked against SDL's `SDL_hidapi_steam_triton.c` and [Steam-Controller-Gamepad-Viewer by ramonchi5](https://github.com/ramonchi5/Steam-Controller-Gamepad-Viewer-by-Ramonchi_5) (MIT), used as a reference only. No code from it is included.
-* Steam and Steam Controller are trademarks of Valve Corporation. This project is unofficial and not endorsed by Valve. The 2026 controller art in this repository is original and drawn from code; no Valve artwork is included.
+The Graphite and Vaporwave Pixel themes are generated by Python scripts in `tools/theme-gen/` (needs Pillow: `pip install pillow`). Re-run them after changing the layout or colours.
 
+Theme authors: [THEMEENGINE.md](THEMEENGINE.md) documents every element type and every controller's inputs, including the 2026 controller's `stick_touch`, `grip2`, `grip_sense`, `qam` and `touch_*:0:pressure`.
 
-## Themes
+## Credits and licenses
+* **[VSCView](https://github.com/Nielk1/VSCView)** and **[ExtendInput](https://github.com/Nielk1/ExtendInput)** by Nielk1 (John Klein), MIT. This project is a fork. The rendering, the theme engine and the original Steam Controller support are their work.
+* Theme authors are credited in the list below and in each theme's `theme.json`.
+* **[SDL3](https://www.libsdl.org/)**, zlib license. It is downloaded at build time and its license ships as `licenses/SDL3.txt`.
+* **[SDL3-CS](https://github.com/flibitijibibo/SDL3-CS)** C# bindings, zlib license. They are vendored unmodified in `VSCView/ThirdParty/SDL3-CS/`.
+* The 2026 controller's input mapping follows SDL's `SDL_hidapi_steam_triton.c`. It was cross-checked against [Steam-Controller-Gamepad-Viewer by ramonchi5](https://github.com/ramonchi5/Steam-Controller-Gamepad-Viewer-by-Ramonchi_5) (MIT), used as a reference only; no code was copied.
+* Steam and Steam Controller are trademarks of Valve Corporation. This project is unofficial and not affiliated with or endorsed by Valve. The Graphite and Vaporwave Pixel controller art is original, drawn from code; no Valve artwork is included.
+
+## Included themes
 * ﻿Sony DualSense
   * Default by [Al. Lopez (AL2009man)](https://github.com/AL2009man)
     - Color: Cosmic Red
