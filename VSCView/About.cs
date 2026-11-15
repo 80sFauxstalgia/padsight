@@ -22,6 +22,7 @@ namespace VSCView
             this.labelCopyright.Text = AssemblyCopyright;
             this.labelCompanyName.Text = AssemblyCompany;
             this.textBoxDescription.Text = AssemblyDescription;
+            AddThirdPartyLicensesTab();
 
             {
                 if (!Directory.Exists("themes")) Directory.CreateDirectory("themes");
@@ -119,6 +120,36 @@ namespace VSCView
                     catch { }
                 }
             }
+        }
+
+        /// <summary>Show every license file shipped in the licenses folder (SDL3, SDL3-CS, Newtonsoft.Json, ...).</summary>
+        private void AddThirdPartyLicensesTab()
+        {
+            try
+            {
+                string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "licenses");
+                if (!Directory.Exists(dir)) return;
+                var sb = new System.Text.StringBuilder();
+                foreach (string file in Directory.GetFiles(dir, "*.txt").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+                {
+                    sb.AppendLine("==== " + Path.GetFileNameWithoutExtension(file) + " ====");
+                    sb.AppendLine(File.ReadAllText(file).Replace("
+", "
+").Replace("
+", "
+").Trim());
+                    sb.AppendLine();
+                }
+                var box = new TextBox
+                {
+                    Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false,
+                    Dock = DockStyle.Fill, Font = new Font(FontFamily.GenericMonospace, 8.25f), Text = sb.ToString()
+                };
+                var page = new TabPage("Third-party licenses");
+                page.Controls.Add(box);
+                tabControl1.TabPages.Add(page);
+            }
+            catch { }
         }
 
         private void Label_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
