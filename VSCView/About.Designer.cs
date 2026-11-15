@@ -189,7 +189,7 @@
             this.tabPage1.Name = "tabPage1";
             this.tabPage1.Size = new System.Drawing.Size(468, 136);
             this.tabPage1.TabIndex = 0;
-            this.tabPage1.Text = "VSCView";
+            this.tabPage1.Text = "PadSight";
             // 
             // tabPage5
             // 
@@ -226,7 +226,7 @@
             this.tabPage2.Name = "tabPage2";
             this.tabPage2.Size = new System.Drawing.Size(468, 136);
             this.tabPage2.TabIndex = 1;
-            this.tabPage2.Text = "VSCView License";
+            this.tabPage2.Text = "License";
             // 
             // textBox1
             // 

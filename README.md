@@ -1,4 +1,4 @@
-# VSCView (OBS edition)
+# PadSight
 
 On-screen controller overlay for streams and videos, with first-class support for **both Steam Controllers**:
 - the original 2015 controller;
@@ -6,7 +6,7 @@ On-screen controller overlay for streams and videos, with first-class support fo
 
 OBS shows it as a **transparent Browser Source**, so no green screen or chroma key is needed.
 
-This is a fork of [Nielk1/VSCView](https://github.com/Nielk1/VSCView). Every original theme and controller still works.
+PadSight is based on [Nielk1/VSCView](https://github.com/Nielk1/VSCView) by John Klein (MIT). Every VSCView theme and controller still works, and VSCView's theme format is unchanged.
 
 <!-- SCREENSHOT: hero image, docs/screenshots/hero.png. Both controllers side by side in OBS over gameplay (Graphite 2026 + Vaporwave 2015), no green fringe. -->
 
@@ -14,14 +14,14 @@ This is a fork of [Nielk1/VSCView](https://github.com/Nielk1/VSCView). Every ori
 - **Real Steam Controller input.**
   - Both controllers: real trackpad touch positions and trails, and the rear grips / back buttons.
   - 2026 controller extras: trackpad pressure, capacitive thumbstick touch, all four back buttons (L4/L5/R4/R5) and grip sense.
-- **True transparency in OBS.** VSCView streams its own rendering to a Browser Source over a local WebSocket, with no chroma-key fringing.
+- **True transparency in OBS.** PadSight streams its own rendering to a Browser Source over a local WebSocket, with no chroma-key fringing.
 - **Control panel.** A setup guide, live controller cards, a theme gallery with previews, an OBS URL builder and plain-language status, in its own window. The same panel also works as an **OBS dock**.
 - **Follow mode.** With both controllers connected, the overlay switches to the one you are using, along with the theme you last used for that kind of controller. One OBS source covers every game.
 - **New themes:** Graphite and Vaporwave Pixel for both Steam Controllers.
 - **Private by design.** The overlay server only listens on `127.0.0.1` (this PC) and sends nothing anywhere else.
 
 ## Quick start
-1. Download the latest release zip, extract it anywhere, and run `VSCView.exe`.
+1. Download the latest release zip, extract it anywhere, and run `PadSight.exe`.
    * Requires Windows 10 or 11. The .NET Framework 4.8 it needs is built in.
 2. The control panel opens with a three-step setup: press a button on your controller, pick a look, add it to OBS.
 3. Afterwards it lives in the tray. Click the tray icon to open the panel again; right-click it to exit.
@@ -30,33 +30,33 @@ The classic borderless window is still there for anyone who used it: turn on **S
 
 <!-- SCREENSHOT: docs/screenshots/theme-browser.png. Theme Browser with the 2026 Graphite theme selected. -->
 
-## Verify your download
-GitHub Actions builds every release from this repository's source. Each release includes:
-* `SHA256SUMS.txt` (and a `.sha256` file per zip). Check the zip matches before running it:
-  ```powershell
-  Get-FileHash .\VSCView-0.6.0-win-x64.zip -Algorithm SHA256
-  ```
-  The hash must equal the one listed in `SHA256SUMS.txt`.
-* A **build provenance attestation**: a signed record of which repository, commit and workflow produced the file. Verify it with the [GitHub CLI](https://cli.github.com/):
-  ```
-  gh attestation verify VSCView-0.6.0-win-x64.zip --repo 80sFauxstalgia/vscview-overlay
-  ```
-
-**Code signing is planned but not active yet.** Releases will be Authenticode-signed for Talaria Software LLC through Azure Artifact Signing. Until then, Windows SmartScreen may warn the first time you run `VSCView.exe`. The checksum and the attestation above are the way to confirm the download is genuine.
-
+## Verify your download
+GitHub Actions builds every release from this repository's source. Each release includes:
+* `SHA256SUMS.txt` (and a `.sha256` file per zip). Check the zip matches before running it:
+  ```powershell
+  Get-FileHash .\PadSight-0.7.0-win-x64.zip -Algorithm SHA256
+  ```
+  The hash must equal the one listed in `SHA256SUMS.txt`.
+* A **build provenance attestation**: a signed record of which repository, commit and workflow produced the file. Verify it with the [GitHub CLI](https://cli.github.com/):
+  ```
+  gh attestation verify PadSight-0.7.0-win-x64.zip --repo 80sFauxstalgia/vscview-overlay
+  ```
+
+**Code signing is planned but not active yet.** Releases will be Authenticode-signed for Talaria Software LLC through Azure Artifact Signing. Until then, Windows SmartScreen may warn the first time you run `PadSight.exe`. The checksum and the attestation above are the way to confirm the download is genuine.
+
 ## Adding it to OBS
 1. In the control panel, open **OBS** and click **Copy** next to the URL. It also shows the width and height to use. The default URL is `http://127.0.0.1:47817/`.
 2. In OBS, under **Sources**, click **+** › **Browser** › **Create new**. Then set:
    * **URL**: paste the URL.
    * **Width × Height**: the size shown on the OBS page, e.g. **1000 × 760** for the Graphite and Vaporwave themes.
    * **Custom CSS**: leave the default. The page is already transparent.
-   * Optional: tick **Shutdown source when not visible**, so VSCView renders nothing while the overlay is off screen.
+   * Optional: tick **Shutdown source when not visible**, so PadSight renders nothing while the overlay is off screen.
 3. Click **OK**, then move and scale the source like any other.
 
 <!-- SCREENSHOT: docs/screenshots/obs-properties.png. OBS Browser Source properties filled in. -->
 <!-- SCREENSHOT: docs/screenshots/obs-scene.png. Overlay over gameplay in an OBS scene. -->
 
-You can close the panel, but keep VSCView running in the tray. If VSCView closes, the source simply goes transparent, and it reconnects on its own when VSCView starts again.
+You can close the panel, but keep PadSight running in the tray. If PadSight closes, the source simply goes transparent, and it reconnects on its own when PadSight starts again.
 
 ### URL options
 | Option | Example | What it does |
@@ -86,11 +86,11 @@ The panel's **Settings** page covers follow mode, per-controller themes, auto-se
 <!-- SCREENSHOT: docs/screenshots/settings.png -->
 
 ## Controller notes
-* **2026 Steam Controller.** VSCView reads it through [SDL3](https://www.libsdl.org/), over USB or the wireless puck.
+* **2026 Steam Controller.** PadSight reads it through [SDL3](https://www.libsdl.org/), over USB or the wireless puck.
   * It appears in the **Controller** menu as *Steam Controller (2026)*.
   * Its gyro and accelerometer are read and fused into an orientation, so themes with a gyro display tilt with the controller. Turn it off in the panel's **Settings** if you don't want it.
   <!-- VERIFY on hardware before release: "works while Steam is running with Steam Input enabled". -->
-* **Original (2015) Steam Controller.** Read through VSCView's established HID decoder, as before. Its gyro is off by default because reading it changes a controller setting while VSCView runs; turn on **Settings › Gyro on the 2015 Steam Controller** in the panel to show it.
+* **Original (2015) Steam Controller.** Read through the HID decoder from VSCView's ExtendInput library. Its gyro is off by default because reading it changes a controller setting while PadSight runs; turn on **Settings › Gyro on the 2015 Steam Controller** in the panel to show it.
 * **Skins follow the controller.** Each kind of controller (2015 or 2026 Steam Controller, Xbox/XInput, DualShock 4, DualSense) gets its own skin: the one you last picked while using it, or a built-in default. When follow mode switches controllers, the overlay switches skin with it.
 * SDL3 is only allowed to touch the 2026 Steam Controller:
   * it never opens other gamepads, so it can't change their LEDs or rumble;
@@ -101,14 +101,14 @@ The panel's **Settings** page covers follow mode, per-controller themes, auto-se
 * **Start here:** the panel's **Help & status** page explains every controller and OBS state and what to do next. **Copy diagnostics** puts a report on the clipboard for bug reports.
 * **The panel window doesn't open.** It uses Microsoft Edge WebView2, which is built into Windows 11 and current Windows 10. Without it, the panel opens in your default browser instead.
 * **The OBS source is empty.**
-  * Check that VSCView is running and has a theme loaded.
+  * Check that PadSight is running and has a theme loaded.
   * Add `&status=1` to the URL to see whether it connects.
   * Open the URL in a normal browser: you should see the controller.
 * **"Could not listen on 127.0.0.1:47817".** Another program is using the port. Pick another one in **Settings…** and update the URL in OBS.
 * **The 2026 controller is not in the Controller menu.**
   * **Settings…** shows the SDL3 status line.
-  * Make sure `SDL3.dll` is next to `VSCView.exe`.
-  * Turn the controller on, or plug it in, while VSCView is running. It is detected within a second.
+  * Make sure `SDL3.dll` is next to `PadSight.exe`.
+  * Turn the controller on, or plug it in, while PadSight is running. It is detected within a second.
 * **The overlay is on the wrong controller.** Press a button on the one you're using; follow mode switches after the other has been idle for 2 seconds. Or pick it from the **Controller** menu.
 * **Diagnostics.** `http://127.0.0.1:47817/status.json` lists the detected controllers, which one is active and its live inputs, the SDL3 status, and per-source render timings.
 * **CPU use.**
@@ -124,13 +124,13 @@ cd vscview-overlay
 dotnet build VSCView.sln -c Release
 ```
 
-The output lands in `VSCView/bin/Release/net462/`.
+The output lands in `VSCView/bin/Release/net462/` (`PadSight.exe`). The source folders keep the VSCView name.
 
 On the first build, MSBuild downloads the official SDL3 release:
 * `SDL3-3.4.20-win32-x64.zip` from `github.com/libsdl-org/SDL`;
 * it is checked against a pinned SHA-256 before use (see `VSCView/VSCView.csproj`).
 
-To make a release zip, run `powershell -ExecutionPolicy Bypass -File tools\package.ps1`. It writes `dist/VSCView-<version>-win-x64.zip` and a `.sha256` file.
+To make a release zip, run `powershell -ExecutionPolicy Bypass -File tools\package.ps1`. It writes `dist/PadSight-<version>-win-x64.zip` and a `.sha256` file.
 
 The Graphite and Vaporwave Pixel themes are generated by Python scripts in `tools/theme-gen/` (needs Pillow: `pip install pillow`). Re-run them after changing the layout or colours.
 
@@ -143,7 +143,7 @@ Copyright (c) 2018-2021 John Klein
 Copyright (c) 2026 Talaria Software LLC
 ```
 
-* **[VSCView](https://github.com/Nielk1/VSCView)** and **[ExtendInput](https://github.com/Nielk1/ExtendInput)** by Nielk1 (John Klein), MIT. This project is a fork. The rendering, the theme engine and the original Steam Controller support are their work.
+* **[VSCView](https://github.com/Nielk1/VSCView)** and **[ExtendInput](https://github.com/Nielk1/ExtendInput)** by Nielk1 (John Klein), MIT. PadSight is a fork of VSCView. The rendering, the theme engine and the original Steam Controller support are their work.
 * Every bundled library and its license is listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 * Theme authors are credited in the list below and in each theme's `theme.json`.
 * **[SDL3](https://www.libsdl.org/)**, zlib license. It is downloaded at build time and its license ships as `licenses/SDL3.txt`.

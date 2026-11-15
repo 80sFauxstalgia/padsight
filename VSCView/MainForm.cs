@@ -439,7 +439,7 @@ namespace VSCView
                 }).ToList();
                 var snap = new
                 {
-                    app = "VSCView",
+                    app = "PadSight",
                     theme = currentThemeFile,
                     followMode = settings.FollowActiveController ?? true,
                     sdl = DeviceManager.SdlStatus,

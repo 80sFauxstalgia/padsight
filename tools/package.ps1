@@ -2,9 +2,9 @@
 #
 #   powershell -ExecutionPolicy Bypass -File tools\package.ps1
 #
-# Output: dist\VSCView-<version>-win-x64.zip plus a .sha256 file next to it.
+# Output: dist\PadSight-<version>-win-x64.zip plus a .sha256 file next to it.
 # User files (settings*.json, ctrl.last) and debug symbols are left out.
-param([switch]$NoBuild)  # -NoBuild: package the existing Release output (e.g. while VSCView is running)
+param([switch]$NoBuild)  # -NoBuild: package the existing Release output (e.g. while PadSight is running)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -15,8 +15,8 @@ if (-not $NoBuild) {
 }
 
 $bin = Join-Path $root 'VSCView\bin\Release\net462'
-$version = (Get-Item (Join-Path $bin 'VSCView.exe')).VersionInfo.FileVersion -replace '\.0$', ''
-$name = "VSCView-$version-win-x64"
+$version = (Get-Item (Join-Path $bin 'PadSight.exe')).VersionInfo.FileVersion -replace '\.0$', ''
+$name = "PadSight-$version-win-x64"
 $dist = Join-Path $root 'dist'
 $stage = Join-Path $dist $name
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }

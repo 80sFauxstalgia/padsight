@@ -2,7 +2,7 @@
 # Usage: powershell -NoProfile -File tools\tests\Test-PanelOrigin.ps1 [-Configuration Debug|Release]
 param([string]$Configuration = 'Debug')
 $ErrorActionPreference = 'Stop'
-$exe = Join-Path $PSScriptRoot "..\..\VSCView\bin\$Configuration\net462\VSCView.exe"
+$exe = Join-Path $PSScriptRoot "..\..\VSCView\bin\$Configuration\net462\PadSight.exe"
 $asm = [Reflection.Assembly]::LoadFrom((Resolve-Path $exe))
 $m = $asm.GetType('VSCView.UiForms.PanelForm').GetMethod('IsOwnUrl')
 $origin = 'http://127.0.0.1:47817/'

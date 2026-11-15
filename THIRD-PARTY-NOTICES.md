@@ -1,6 +1,6 @@
 # Third-party notices
 
-VSCView ships the components below next to `VSCView.exe`. Each license text is in the `licenses/` folder of the release. The About dialog also shows them, on its "Third-party licenses" tab.
+PadSight ships the components below next to `PadSight.exe`. Each license text is in the `licenses/` folder of the release. The About dialog also shows them, on its "Third-party licenses" tab.
 
 | Component | Version | License | File in `licenses/` |
 | --- | --- | --- | --- |

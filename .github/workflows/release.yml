@@ -91,7 +91,7 @@ jobs:
           signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
           certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
           files: |
-            ${{ github.workspace }}\VSCView\bin\Release\net462\VSCView.exe
+            ${{ github.workspace }}\VSCView\bin\Release\net462\PadSight.exe
             ${{ github.workspace }}\VSCView\bin\Release\net462\ThemeFixer.exe
             ${{ github.workspace }}\VSCView\bin\Release\net462\ExtendInput.dll
           file-digest: SHA256
@@ -141,4 +141,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $files = @(Get-ChildItem dist/*.zip, dist/*.sha256, dist/SHA256SUMS.txt | ForEach-Object FullName)
-          gh release create "$env:GITHUB_REF_NAME" --draft --verify-tag --title "VSCView $env:GITHUB_REF_NAME" --notes "Draft created by the release workflow. Review before publishing." @files
+          gh release create "$env:GITHUB_REF_NAME" --draft --verify-tag --title "PadSight $env:GITHUB_REF_NAME" --notes "Draft created by the release workflow. Review before publishing." @files
