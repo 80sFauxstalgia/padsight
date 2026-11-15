@@ -41,7 +41,9 @@ namespace VSCView.UiForms
             Font = SystemFonts.MessageBoxFont;
             ShowInTaskbar = true;
 
-            var split = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 330, FixedPanel = FixedPanel.Panel1 };
+            var split = new SplitContainer { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel1 };
+            // SplitterDistance must be set once the container has its real width, or it gets clamped.
+            Shown += (s, e) => { try { split.SplitterDistance = Math.Min(330, split.Width / 2); } catch (InvalidOperationException) { } };
 
             search.Dock = DockStyle.Top;
             search.Margin = new Padding(6);
@@ -78,7 +80,7 @@ namespace VSCView.UiForms
             };
             btnClose.Text = "Close";
             btnClose.AutoSize = true;
-            btnClose.DialogResult = DialogResult.Cancel;
+            btnClose.Click += (s, e) => Close(); // modeless: DialogResult alone would not close it
             CancelButton = btnClose;
             AcceptButton = btnUse;
 

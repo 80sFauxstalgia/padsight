@@ -10,6 +10,8 @@ namespace VSCView.UiForms
     {
         public bool OverlayEnabled { get; set; }
         public int OverlayPort { get; set; }
+        /// <summary>Added to the port for 2nd+ instances (instance number), shown in the URL only.</summary>
+        public int PortOffset { get; set; }
         public int OverlayFps { get; set; }
         public bool AutoSelectOnlyController { get; set; }
         public bool RememberThemePerController { get; set; }
@@ -130,7 +132,7 @@ namespace VSCView.UiForms
             refresh.Start();
         }
 
-        private void UpdateUrl() => txtUrl.Text = chkOverlay.Checked ? $"http://127.0.0.1:{numPort.Value}/" : "(server off)";
+        private void UpdateUrl() => txtUrl.Text = chkOverlay.Checked ? $"http://127.0.0.1:{numPort.Value + Values.PortOffset}/" : "(server off)";
 
         private void Save()
         {

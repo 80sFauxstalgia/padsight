@@ -8,7 +8,7 @@
     <TargetFramework>net462</TargetFramework>
     <AssemblyName>ExtendInput</AssemblyName>
     <RootNamespace>ExtendInput</RootNamespace>
-    <LangVersion>latest</LangVersion>
+    <LangVersion>13</LangVersion>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Nullable>disable</Nullable>

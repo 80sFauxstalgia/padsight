@@ -93,7 +93,11 @@ namespace VSCView.Web
             while (running)
             {
                 WebSocketClient[] list;
-                lock (clients) list = clients.ToArray();
+                lock (clients)
+                {
+                    clients.RemoveAll(c => c.IsClosed); // safety net; Closed normally removes them
+                    list = clients.ToArray();
+                }
                 if (list.Length == 0 || ui == null)
                 {
                     Thread.Sleep(50);
@@ -144,6 +148,7 @@ namespace VSCView.Web
                         ulong* row = (ulong*)((byte*)data.Scan0 + (long)y * data.Stride);
                         int n = data.Width / 2;
                         for (int x = 0; x < n; x++) { hash ^= row[x]; hash *= 1099511628211UL; }
+                        if ((data.Width & 1) != 0) { hash ^= ((uint*)row)[data.Width - 1]; hash *= 1099511628211UL; }
                     }
                 }
                 finally { bitmap.UnlockBits(data); }

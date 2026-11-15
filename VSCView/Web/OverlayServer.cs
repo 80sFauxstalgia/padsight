@@ -71,27 +71,46 @@ namespace VSCView.Web
             {
                 TcpClient client;
                 try { client = listener.AcceptTcpClient(); }
-                catch { if (!running) return; continue; }
-                new Thread(() => Handle(client)) { IsBackground = true, Name = "Overlay client" }.Start();
+                catch { if (!running) return; Thread.Sleep(100); continue; }
+
+                // Local-only, but still don't let anything spawn unbounded threads.
+                if (Interlocked.Increment(ref connections) > MaxConnections)
+                {
+                    Interlocked.Decrement(ref connections);
+                    try { client.Close(); } catch { }
+                    continue;
+                }
+                new Thread(() =>
+                {
+                    bool handedOff = false;
+                    try { handedOff = Handle(client); }
+                    finally { if (!handedOff) Interlocked.Decrement(ref connections); } // WebSockets release on close
+                })
+                { IsBackground = true, Name = "Overlay client" }.Start();
             }
         }
 
-        private void Handle(TcpClient client)
+        private const int MaxConnections = 32;
+        private int connections;
+
+        /// <summary>Handles one request. Returns true when the connection was handed to a WebSocket client.</summary>
+        private bool Handle(TcpClient client)
         {
             client.NoDelay = true;
             NetworkStream stream = client.GetStream();
             bool keepOpen = false;
             try
             {
+                stream.WriteTimeout = 5000; // a stalled reader can't pin a send thread forever
                 stream.ReadTimeout = 5000;
                 if (!TryReadRequest(stream, out string method, out string target, out var headers))
-                    return;
+                    return false;
 
                 string host = headers.TryGetValue("host", out var h) ? h : "";
                 if (!IsLoopbackHost(host))
                 {
                     WriteSimple(stream, 403, "Forbidden", "text/plain", Encoding.UTF8.GetBytes("Forbidden"));
-                    return;
+                    return false;
                 }
 
                 string path = target, query = "";
@@ -102,7 +121,7 @@ namespace VSCView.Web
                 if (method != "GET")
                 {
                     WriteSimple(stream, 405, "Method Not Allowed", "text/plain", Encoding.UTF8.GetBytes("GET only"));
-                    return;
+                    return false;
                 }
 
                 if (path == "/ws")
@@ -111,19 +130,27 @@ namespace VSCView.Web
                         !(headers.TryGetValue("upgrade", out string up) && up.Equals("websocket", StringComparison.OrdinalIgnoreCase)))
                     {
                         WriteSimple(stream, 400, "Bad Request", "text/plain", Encoding.UTF8.GetBytes("WebSocket upgrade required"));
-                        return;
+                        return false;
                     }
-                    if (headers.TryGetValue("origin", out string origin) && origin != "null" && !IsLoopbackOrigin(origin))
+                    // Browsers always send Origin. Only our own page (served from this port) may connect; "null"
+                    // (sandboxed iframes, data: URLs) is refused. A missing Origin means a non-browser local tool.
+                    if (headers.TryGetValue("origin", out string origin) && !IsLoopbackOrigin(origin))
                     {
                         WriteSimple(stream, 403, "Forbidden", "text/plain", Encoding.UTF8.GetBytes("Forbidden origin"));
-                        return;
+                        return false;
                     }
 
-                    OverlayChannel channel = channelForQuery(query);
+                    OverlayChannel channel;
+                    try { channel = channelForQuery(query); }
+                    catch (Exception ex)
+                    {
+                        WriteSimple(stream, 500, "Internal Server Error", "text/plain", Encoding.UTF8.GetBytes("Theme failed to load: " + ex.Message));
+                        return false;
+                    }
                     if (channel == null)
                     {
                         WriteSimple(stream, 404, "Not Found", "text/plain", Encoding.UTF8.GetBytes("Unknown theme"));
-                        return;
+                        return false;
                     }
 
                     string accept;
@@ -137,8 +164,10 @@ namespace VSCView.Web
 
                     keepOpen = true;
                     var ws = new WebSocketClient(client, stream);
-                    channel.Attach(ws);
-                    return;
+                    ws.Closed += _ => Interlocked.Decrement(ref connections);
+                    channel.Attach(ws); // subscribes to Closed before the socket threads start
+                    ws.Start();
+                    return true;
                 }
 
                 if (path == "/" || path == "") path = "/overlay.html";
@@ -156,6 +185,7 @@ namespace VSCView.Web
                     try { client.Close(); } catch { }
                 }
             }
+            return keepOpen;
         }
 
         private void ServeStatic(Stream stream, string path)
@@ -240,7 +270,8 @@ namespace VSCView.Web
         private readonly AutoResetEvent wake = new AutoResetEvent(false);
         private byte[] pendingBinary;
         private string pendingText;
-        private volatile bool closed;
+        private int closedFlag;
+        private bool closed => Volatile.Read(ref closedFlag) != 0;
 
         public event Action<WebSocketClient> Closed;
         public bool IsClosed => closed;
@@ -249,6 +280,11 @@ namespace VSCView.Web
         {
             this.client = client;
             this.stream = stream;
+        }
+
+        /// <summary>Start the socket threads. Call after subscribing to <see cref="Closed"/>.</summary>
+        public void Start()
+        {
             new Thread(SendLoop) { IsBackground = true, Name = "WS send" }.Start();
             new Thread(ReceiveLoop) { IsBackground = true, Name = "WS receive" }.Start();
         }
@@ -351,8 +387,7 @@ namespace VSCView.Web
 
         public void Dispose()
         {
-            if (closed) return;
-            closed = true;
+            if (Interlocked.Exchange(ref closedFlag, 1) != 0) return; // Closed fires exactly once
             wake.Set();
             try { stream.Dispose(); } catch { }
             try { client.Close(); } catch { }

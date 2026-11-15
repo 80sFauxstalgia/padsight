@@ -203,10 +203,20 @@ namespace VSCView
         #endregion OBS Browser Source
 
         #region Settings, theme browser, per-controller themes, follow mode
+        /// <summary>Load a theme chosen by the user and report failures instead of dropping them.</summary>
+        private async void LoadThemeSafe(string file)
+        {
+            try { await LoadTheme(file, false); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Could not load the theme\n{file}\n\n{ex.Message}", "Theme", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
         private void ShowThemeBrowser()
         {
             var form = new UiForms.ThemePickerForm(currentThemeFile,
-                file => { var _ = LoadTheme(file, false); },
+                file => LoadThemeSafe(file),
                 file => overlayHub.UrlForTheme(file));
             form.Show(this);
         }
@@ -217,6 +227,7 @@ namespace VSCView
             {
                 OverlayEnabled = settings.OverlayEnabled ?? true,
                 OverlayPort = settings.OverlayPort ?? DefaultOverlayPort,
+                PortOffset = instanceNumber,
                 OverlayFps = settings.OverlayFps ?? 60,
                 AutoSelectOnlyController = settings.AutoSelectOnlyController,
                 FollowActiveController = settings.FollowActiveController ?? true,
@@ -280,8 +291,8 @@ namespace VSCView
             if (kind == null || settings.ThemeByController == null) return;
             if (!settings.ThemeByController.TryGetValue(kind, out string file) || !File.Exists(file)) return;
             if (currentThemeFile != null && Path.GetFullPath(file).Equals(Path.GetFullPath(currentThemeFile), StringComparison.OrdinalIgnoreCase)) return;
-            if (InvokeRequired) BeginInvoke(new Action(() => { var _ = LoadTheme(file, false); }));
-            else { var _ = LoadTheme(file, false); }
+            if (InvokeRequired) BeginInvoke(new Action(() => LoadThemeSafe(file)));
+            else LoadThemeSafe(file);
         }
 
         System.Windows.Forms.Timer followTimer;
@@ -297,9 +308,12 @@ namespace VSCView
         {
             if (!(settings.FollowActiveController ?? true)) return;
 
-            List<IController> present;
-            lock (ControllerMemoHack)
-                present = ControllerMemoHack.Values.Select(v => v.Item1).Where(c => c.IsPresent).ToList();
+            // UI thread only (see PostToUi), so no lock is needed.
+            List<IController> present = ControllerMemoHack.Values.Select(v => v.Item1).Where(c => c.IsPresent).ToList();
+            // XInput slots include Steam's virtual Xbox pads, which mirror whatever real controller is in use, so
+            // they would always "win". Ignore them whenever a controller with its own driver is connected.
+            if (present.Any(c => !(c is XInputController)))
+                present = present.Where(c => !(c is XInputController)).ToList();
             if (present.Count < 2) return; // nothing to follow
 
             DateTime now = DateTime.UtcNow;
@@ -531,11 +545,25 @@ namespace VSCView
         }
 
         Dictionary<string, (IController, ToolStripItem)> ControllerMemoHack = new Dictionary<string, (IController, ToolStripItem)>();
+        // Device events arrive on HID/SDL threads. Everything that touches ControllerMemoHack, the menu or the
+        // active controller is marshalled to the UI thread with BeginInvoke (never a blocking Invoke while
+        // holding a lock), so the UI thread is the only one that reads or writes that state.
+        private void PostToUi(MethodInvoker action)
+        {
+            try
+            {
+                if (this.IsDisposed || this.Disposing) return;
+                if (this.IsHandleCreated) this.BeginInvoke(action);
+                else action();
+            }
+            catch (ObjectDisposedException) { /* exiting */ }
+            catch (InvalidOperationException) { /* handle torn down while exiting */ }
+        }
+
         private void DeviceManager_ControllerAdded(object sender, IController controller)
         {
-            lock (ControllerMemoHack)
             {
-                this.Invoke((MethodInvoker)delegate
+                PostToUi(delegate
                 {
                     string NiceName = controller.Name;
                     {
@@ -581,9 +609,9 @@ namespace VSCView
                     // load the first controller in the list if it exists
                     //if (firstload && i == 0 && Controllers[i] != null)
                     //    LoadController(Controllers[i], null);
+                    AutoLoadController();
                 });
             }
-            AutoLoadController();
         }
 
         private void UpdateIcon(ToolStripItem itm)
@@ -697,9 +725,8 @@ namespace VSCView
 
         private void DeviceManager_ControllerRemoved(object sender, ExtendInput.DeviceProvider.IDevice e)
         {
-            lock(ControllerMemoHack)
             {
-                this.Invoke((MethodInvoker)delegate
+                PostToUi(delegate
                 {
                     if (ControllerMemoHack.ContainsKey(e.UniqueKey))
                     {
@@ -708,12 +735,14 @@ namespace VSCView
                         RemovedController.Dispose();
                         tsmiController.DropDownItems.Remove(ControllerMemoHack[e.UniqueKey].Item2);
                         ControllerMemoHack.Remove(e.UniqueKey);
+                        followReading.Remove(RemovedController);
+                        lastUsed.Remove(RemovedController);
                         if (ActiveController == RemovedController)
                             ActiveController = null;
                     }
+                    AutoLoadController();
                 });
             }
-            AutoLoadController();
         }
 
         private void LoadController(object sender, EventArgs e)
@@ -817,7 +846,9 @@ namespace VSCView
                 skinJson = JsonConvert.SerializeObject(ui, Formatting.Indented);
             }
 
+            UI oldUi = ui;
             ui = new UI(ControllerData, Path.GetDirectoryName(path), skinJson);
+            oldUi?.Dispose(); // UI thread only; OnPaint also runs here, so nothing else is using it
             currentThemeFile = path;
             try { overlayHub?.SetMainTheme(path); } catch (Exception ex) { Debug.WriteLine("Overlay theme: " + ex); }
             if (!settings.CustomSize)
@@ -836,6 +867,7 @@ namespace VSCView
             lblHint1.Hide();
             lblHint2.Hide();
 
+            ttimer?.Dispose();
             ttimer = new System.Threading.Timer(new TimerCallback(Render), null, 0, frameTime);
         }
 

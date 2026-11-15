@@ -20,7 +20,8 @@ namespace VSCView.Web
         private string mainThemeFile;
         private OverlayServer server;
 
-        public int DefaultFps { get; set; } = 60;
+        private int defaultFps = 60;
+        public int DefaultFps { get => defaultFps; set => defaultFps = ClampFps(value); }
         public int Port => server?.Port ?? 0;
         public string Error => server?.Error;
         public bool IsRunning => server?.IsRunning ?? false;
@@ -51,20 +52,31 @@ namespace VSCView.Web
         public void SetMainTheme(string themeFile)
         {
             mainThemeFile = themeFile;
-            OverlayChannel ch = GetOrCreate("main", DefaultFps);
-            ch.SetUi(LoadUi(themeFile, controllerData));
+            var main = GetOrCreate("main", DefaultFps, () => LoadUi(themeFile, controllerData), out bool created);
+            if (!created) main.SetUi(LoadUi(themeFile, controllerData));
+            // every "follows the window" channel, whatever its frame rate
+            foreach (var ch in Snapshot().Where(c => c.Key.StartsWith("main@")))
+                TryReload(ch, themeFile);
         }
 
         /// <summary>Called when the window's controller changes; trail/peak state is per UI so rebuild bindings.</summary>
         public void ControllerChanged()
         {
             // UI objects resolve Flee variable types per controller; reload so expressions bind to the new controls.
-            lock (channels)
-                foreach (var kv in channels)
-                {
-                    string file = kv.Key == "main" ? mainThemeFile : ThemeFileFromKey(kv.Key);
-                    if (file != null) kv.Value.SetUi(LoadUi(file, controllerData));
-                }
+            foreach (var ch in Snapshot())
+                TryReload(ch, ch.Key == "main" ? mainThemeFile : ThemeFileFromKey(ch.Key));
+        }
+
+        private void TryReload(OverlayChannel ch, string file)
+        {
+            if (file == null) return;
+            try { ch.SetUi(LoadUi(file, controllerData)); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Overlay: could not load {file}: {ex.Message}"); }
+        }
+
+        private List<OverlayChannel> Snapshot()
+        {
+            lock (channels) return channels.Values.ToList();
         }
 
         public string StatsText()
@@ -80,37 +92,54 @@ namespace VSCView.Web
         {
             var q = ParseQuery(query);
             int fps = DefaultFps;
-            if (q.TryGetValue("fps", out string f) && int.TryParse(f, out int fv)) fps = fv;
+            if (q.TryGetValue("fps", out string f) && int.TryParse(f, out int fv)) fps = ClampFps(fv);
 
             if (!q.TryGetValue("theme", out string theme) || string.IsNullOrWhiteSpace(theme))
             {
-                if (fps == DefaultFps) return GetOrCreate("main", fps);
-                // main theme at a different rate
-                string key = $"main@{fps}";
-                bool created;
-                OverlayChannel c = GetOrCreate(key, fps, out created);
-                if (created && mainThemeFile != null) c.SetUi(LoadUi(mainThemeFile, controllerData));
-                return c;
+                if (fps == DefaultFps) return GetOrCreate("main", fps, null, out _);
+                // the window's theme at a different rate
+                string main = mainThemeFile;
+                return GetOrCreate($"main@{fps}", fps, main == null ? (Func<UI>)null : () => LoadUi(main, controllerData), out _);
             }
 
             string file = ResolveThemeFile(theme);
             if (file == null) return null;
-            {
-                string key = $"theme:{RelativeThemePath(file)}@{fps}";
-                OverlayChannel c = GetOrCreate(key, fps, out bool created);
-                if (created) c.SetUi(LoadUi(file, controllerData));
-                return c;
-            }
+            return GetOrCreate($"theme:{RelativeThemePath(file)}@{fps}", fps, () => LoadUi(file, controllerData), out _);
         }
 
-        private OverlayChannel GetOrCreate(string key, int fps) => GetOrCreate(key, fps, out _);
+        /// <summary>Only a few frame rates, so URLs can't create unbounded channels (each has a render thread).</summary>
+        private static int ClampFps(int fps)
+        {
+            int[] allowed = { 10, 15, 20, 24, 30, 48, 50, 60, 75, 90, 120 };
+            return allowed.OrderBy(a => Math.Abs(a - fps)).First();
+        }
 
-        private OverlayChannel GetOrCreate(string key, int fps, out bool created)
+        private const int MaxChannels = 12;
+
+        /// <summary>
+        /// Get a channel, creating it if needed. The UI is built before the channel is published, so a broken theme
+        /// never leaves an empty channel behind. Idle channels are disposed when the limit is reached.
+        /// </summary>
+        private OverlayChannel GetOrCreate(string key, int fps, Func<UI> createUi, out bool created)
         {
             lock (channels)
+                if (channels.TryGetValue(key, out var existing)) { created = false; return existing; }
+
+            UI ui = createUi?.Invoke(); // may throw (bad theme): nothing has been registered yet
+            lock (channels)
             {
-                if (channels.TryGetValue(key, out var ch)) { created = false; return ch; }
-                ch = new OverlayChannel(key, fps, true);
+                if (channels.TryGetValue(key, out var raced)) { ui?.Dispose(); created = false; return raced; }
+                if (channels.Count >= MaxChannels)
+                {
+                    foreach (var idle in channels.Values.Where(c => c.Key != "main" && c.ClientCount == 0).ToList())
+                    {
+                        channels.Remove(idle.Key);
+                        idle.Dispose();
+                    }
+                    if (channels.Count >= MaxChannels) { ui?.Dispose(); throw new InvalidOperationException("Too many overlay channels"); }
+                }
+                var ch = new OverlayChannel(key, ClampFps(fps), true);
+                if (ui != null) ch.SetUi(ui);
                 channels[key] = ch;
                 created = true;
                 return ch;

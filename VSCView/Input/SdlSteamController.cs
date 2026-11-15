@@ -73,8 +73,9 @@ namespace VSCView.Input
 
         public ControllerState GetState() => state;
 
-        // Reading is driven by SdlGamepadManager's thread for as long as the device is attached,
-        // so these are no-ops; nothing is written to the controller.
+        // Reading is driven by SdlGamepadManager's thread for as long as the device is attached, so these are
+        // no-ops. VSCView itself sends nothing, but while the device is open SDL's driver re-sends "lizard mode
+        // off" every 3 s (the same setting Steam uses), so trackpad mouse emulation without Steam is paused.
         public void Initalize() { }
         public void DeInitalize() { }
         public void Identify() { }
@@ -157,9 +158,9 @@ namespace VSCView.Input
         private static void ReadPad(IntPtr pad, int index, ControlTouchPressure t, bool click)
         {
             t.Click = click;
-            if (SDL.SDL_GetGamepadTouchpadFinger(pad, index, 0, out SDL.SDLBool down, out float x, out float y, out float pressure))
+            if (SDL.SDL_GetGamepadTouchpadFinger(pad, index, 0, out SDL.SDLBool down, out float x, out float y, out float pressure) && down)
             {
-                t.Touch = down;
+                t.Touch = true;
                 // SDL reports 0..1 with y growing downward; themes expect -1..1 centered, y down.
                 t.X = Clamp(x * 2f - 1f);
                 t.Y = Clamp(y * 2f - 1f);

@@ -36,6 +36,10 @@ namespace VSCView.Input
         [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern IntPtr LoadLibrary(string lpFileName);
 
+        [DllImport("winmm.dll")] private static extern uint timeBeginPeriod(uint uPeriod);
+        [DllImport("winmm.dll")] private static extern uint timeEndPeriod(uint uPeriod);
+        private bool timerRaised;
+
         public void Start()
         {
             if (thread != null) return;
@@ -78,9 +82,17 @@ namespace VSCView.Input
                     return;
                 }
                 sdlUp = true;
+                // We poll state with SDL_UpdateGamepads(); without this, unread joystick/gamepad events would pile
+                // up in SDL's queue until it is full.
+                SDL.SDL_SetJoystickEventsEnabled(false);
+                SDL.SDL_SetGamepadEventsEnabled(false);
                 int v = SDL.SDL_GetVersion();
                 Status = $"SDL {v / 1000000}.{v / 1000 % 1000}.{v % 1000} ready";
                 Debug.WriteLine(Status);
+
+                // 1 ms timer resolution while polling; otherwise Sleep(2) is ~15.6 ms and short taps can be missed.
+                timeBeginPeriod(1);
+                timerRaised = true;
 
                 var scan = Stopwatch.StartNew();
                 Rescan();
@@ -124,6 +136,7 @@ namespace VSCView.Input
                 }
                 open.Clear();
                 if (sdlUp) SDL.SDL_Quit();
+                if (timerRaised) timeEndPeriod(1);
             }
         }
 
@@ -176,9 +189,10 @@ namespace VSCView.Input
                 }
 
                 string name = SDL.SDL_GetGamepadName(pad);
+                // The HID path is unique per controller slot. The serial is not: every controller paired to one
+                // wireless puck reports the puck's USB serial.
                 string path = SDL.SDL_GetGamepadPath(pad) ?? $"sdl:{id}";
-                string serial = SDL.SDL_GetGamepadSerial(pad);
-                string key = "SDL3:" + (string.IsNullOrEmpty(serial) ? path : serial);
+                string key = "SDL3:" + path;
                 var ctrl = new SdlSteamController(pad, id, new SdlDevice(path, vid, pid, key), name);
                 open[id] = ctrl;
                 Debug.WriteLine($"SDL3: added {ctrl.Name} {vid:x4}:{pid:x4} {path}");
