@@ -225,3 +225,13 @@ ol.steps-list b { color: var(--text); }
   h1 { font-size: 24px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---------- OBS scene rules ---------- */
+#obsRules > .row { padding: 8px 0; border-top: 1px solid var(--line); }
+#obsRules > .row:first-child { border-top: 0; }
+#obsRules select {
+  padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--text);
+  max-width: 340px; min-width: 0; width: 100%;
+}
+#obsRules .row > .row { flex: 1 1 260px; justify-content: flex-end; flex-wrap: nowrap; }
+#obsRules input[type=checkbox] { accent-color: var(--accent); }

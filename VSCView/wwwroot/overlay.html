@@ -8,7 +8,7 @@
   /* Fully transparent page: OBS Browser Sources composite it with real alpha, no chroma key needed. */
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transition: opacity .6s ease; }
-  body.idle canvas { opacity: 0 !important; }
+  body.idle canvas, body.obs-hidden canvas { opacity: 0 !important; }
   #status {
     position: absolute; left: 8px; bottom: 8px; padding: 4px 8px; border-radius: 4px;
     font: 12px/1.3 system-ui, sans-serif; color: #fff; background: rgba(0,0,0,.55); display: none;
@@ -89,7 +89,9 @@
         try {
           const m = JSON.parse(ev.data);
           if (m.type === 'meta') {
-            setStatus(`connected · ${m.width}×${m.height}`);
+            setStatus(`connected · ${m.width}×${m.height}${m.visible === false ? ' · hidden by a PadSight rule' : ''}`);
+            // PadSight's OBS rules (break scenes, live-only, the hide hotkey). Panel previews ignore them.
+            if (params.get('preview') !== '1') document.body.classList.toggle('obs-hidden', m.visible === false);
             if (!m.width) ctx.clearRect(0, 0, canvas.width, canvas.height);
           }
         } catch {}

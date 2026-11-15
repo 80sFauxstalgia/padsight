@@ -365,6 +365,7 @@
           ${['cx', 'cy', 'cw', 'ch'].map((k, i) => `<label class="field">${['Left', 'Top', 'Width', 'Height'][i]} (theme pixels)<input type="number" min="0" step="1" value="${opts[k]}" data-opt="${k}"></label>`).join('')}
         </div>
       </section>
+      ${obsLinkSection()}
       <section class="card" aria-label="OBS dock">
         <h2 class="label">Control it from inside OBS</h2>
         <p class="sub">This panel also works as an OBS dock. In OBS, open <b>Docks › Custom Browser Docks</b>, name it PadSight and paste the dock URL. Then you can switch themes or controllers mid-stream without leaving OBS.</p>
@@ -372,6 +373,165 @@
         <p class="small">The dock URL contains this PC's panel key. Paste it only into OBS, and don't show it on stream.</p>
       </section>`;
   }
+
+
+  // ---------------------------------------------------------------- OBS link
+  let obsScenes = null;       // {scenes, current, sources} from /api/obs/scenes
+  let obsScenesAt = 0;
+
+  function obsLinkSection() {
+    const o = state?.obs || {};
+    return `
+      <section class="card hud" aria-label="OBS link" id="obsLink">
+        <div class="row spread"><h2 class="label">OBS link</h2><span class="tag" id="obsStatusTag">…</span></div>
+        <p class="sub" id="obsStatusText"></p>
+        <div class="form">
+          <label class="field">Address<input type="text" id="obsHost" value="${esc(o.host || '127.0.0.1')}" spellcheck="false"></label>
+          <label class="field">Port<input type="number" id="obsPort" min="1" max="65535" value="${esc(o.port || 4455)}"></label>
+          <label class="field">Password<input type="password" id="obsPassword" autocomplete="off" placeholder="${o.hasPassword ? 'Saved (type to replace)' : 'From OBS'}"></label>
+        </div>
+        <p class="small">In OBS: <b>Tools › WebSocket Server Settings</b>, tick <b>Enable WebSocket server</b>, then <b>Show Connect Info</b> for the password. It's stored on this PC only, encrypted for your Windows account, and never shown again.</p>
+        <div class="row">
+          <button class="btn primary" type="button" data-act="obs-connect">${o.enabled ? 'Reconnect' : 'Connect to OBS'}</button>
+          <button class="btn" type="button" data-act="obs-disconnect" ${o.enabled ? '' : 'hidden'}>Disconnect</button>
+          <button class="btn" type="button" data-act="obs-forget" ${o.hasPassword ? '' : 'hidden'}>Forget password</button>
+        </div>
+      </section>
+      <div id="obsLinked" hidden>
+        <div class="grid cols-2">
+          <section class="card" aria-label="Add it for me">
+            <h2 class="label">Add it for me</h2>
+            <p class="sub">Creates a transparent Browser Source with the URL, size and options above, with <b>Shutdown source when not visible</b> on.</p>
+            <div class="form">
+              <label class="field">Scene<select id="obsAddScene"></select></label>
+              <label class="field">Source name<input type="text" id="obsAddName" value="PadSight" maxlength="64"></label>
+            </div>
+            <div class="row"><button class="btn primary" type="button" data-act="obs-add">Add overlay to OBS</button></div>
+          </section>
+          <section class="card" aria-label="PadSight sources in OBS">
+            <div class="row spread"><h2 class="label">PadSight sources in OBS</h2><button class="btn small" type="button" data-act="obs-refresh">Refresh</button></div>
+            <div id="obsSources" class="grid"></div>
+          </section>
+        </div>
+        <section class="card" aria-label="Scene rules">
+          <div class="row spread"><h2 class="label">Scene rules</h2><span class="small">Saved as you change them.</span></div>
+          <p class="sub">A theme per scene changes sources that follow the app (not ones pinned to a theme). Hidden scenes fade every PadSight source out.</p>
+          <div id="obsRules" class="grid"></div>
+          <label class="toggle"><input type="checkbox" id="obsOnlyLive"><span><b>Show only while live or recording</b><br>Keeps the overlay hidden while you set up.</span></label>
+        </section>
+      </div>
+      <section class="card" aria-label="Hotkeys">
+        <div class="row spread"><h2 class="label">Hotkeys</h2><span class="small">Work everywhere, also from a Stream Deck hotkey button.</span></div>
+        <div class="form">
+          <label class="field">Hide or show the overlay<input type="text" id="hkToggle" readonly placeholder="Click, then press keys" data-hotkey="toggle"></label>
+          <label class="field">Next controller<input type="text" id="hkNext" readonly placeholder="Click, then press keys" data-hotkey="next"></label>
+        </div>
+        <p class="small" id="hkNote">Use a modifier such as Ctrl+Alt, or F13–F24. Backspace clears.</p>
+        <div class="row"><button class="btn" type="button" data-act="toggle-hidden" id="btnHideNow">Hide overlay now</button></div>
+      </section>`;
+  }
+
+  function obsTone(o) {
+    switch (o.status) {
+      case 'Connected': return ['ok', 'CONNECTED'];
+      case 'Connecting': return ['', 'CONNECTING'];
+      case 'WrongPassword': return ['err', 'WRONG PASSWORD'];
+      case 'Unreachable': return ['warn', 'NOT REACHABLE'];
+      default: return ['', 'OFF'];
+    }
+  }
+
+  function updateObsLink() {
+    const o = state?.obs;
+    if (!o || !$('#obsLink')) return;
+    const [tone, tag] = obsTone(o);
+    const t = $('#obsStatusTag');
+    t.className = 'tag ' + tone; t.textContent = tag;
+    let text;
+    if (o.status === 'Connected') text = `Linked to OBS${o.version ? ' (WebSocket ' + o.version + ')' : ''}. Scene: ${o.scene || '?'}${o.streaming ? ' · live' : ''}${o.recording ? ' · recording' : ''}.`;
+    else if (o.status === 'WrongPassword') text = 'OBS refused the password. Copy it again from OBS › Tools › WebSocket Server Settings › Show Connect Info.';
+    else if (o.status === 'Unreachable') text = o.error || 'OBS isn\u2019t answering.';
+    else if (o.status === 'Connecting') text = 'Connecting…';
+    else text = 'Not linked. The manual steps above work without it.';
+    if (o.hiddenReason) text += ` Overlay hidden: ${o.hiddenReason}.`;
+    $('#obsStatusText').textContent = text;
+    $('#btnHideNow').textContent = o.manualHidden ? 'Show overlay again' : 'Hide overlay now';
+    for (const [id, which] of [['hkToggle', 'toggle'], ['hkNext', 'next']]) {
+      const el = $('#' + id);
+      if (document.activeElement !== el) el.value = o.hotkeys?.[which] || '';
+    }
+    const errs = Object.entries(o.hotkeys?.errors || {});
+    $('#hkNote').textContent = errs.length ? errs.map(([k, v]) => `${k === 'toggle' ? 'Hide/show' : 'Next controller'}: ${v}`).join(' · ') : 'Use a modifier such as Ctrl+Alt, or F13–F24. Backspace clears.';
+
+    const linked = o.status === 'Connected';
+    $('#obsLinked').hidden = !linked;
+    if (linked && (!obsScenes || Date.now() - obsScenesAt > 5000)) loadObsScenes();
+    if (linked && obsScenes) renderObsLinked();
+  }
+
+  let obsLoading = false;
+  async function loadObsScenes() {
+    if (obsLoading) return;
+    obsLoading = true;
+    try { obsScenes = await api('obs/scenes'); obsScenesAt = Date.now(); renderObsLinked(true); }
+    catch (e) { obsScenesAt = Date.now(); }
+    finally { obsLoading = false; }
+  }
+
+  function renderObsLinked(force) {
+    const o = state.obs, sc = obsScenes;
+    const sig = JSON.stringify([sc, o.rules, themes && themes.length]);
+    if (!force && sig === lastSig.obsLinked) return;
+    lastSig.obsLinked = sig;
+    const addSel = $('#obsAddScene');
+    const keep = addSel.value || sc.current;
+    addSel.innerHTML = sc.scenes.map(n => `<option ${n === keep ? 'selected' : ''}>${esc(n)}</option>`).join('');
+    $('#obsSources').innerHTML = sc.sources.length ? sc.sources.map(s => `
+      <div class="row spread"><div><b>${esc(s.name)}</b><p class="small mono">${esc(s.url)} · ${s.width}×${s.height}</p></div>
+      ${s.portOk ? '<span class="tag ok">OK</span>' : `<button class="btn small" type="button" data-act="obs-fix" data-name="${esc(s.name)}">Fix port</button>`}</div>`).join('')
+      : '<p class="small">No PadSight sources yet.</p>';
+    const themeOpts = sel => `<option value="">Follow the app</option>` + (themes || []).map(t => `<option value="${esc(t.key)}" ${t.key === sel ? 'selected' : ''}>${esc(t.family)} · ${esc(themeTitle(t))}</option>`).join('');
+    $('#obsRules').innerHTML = sc.scenes.map(n => `
+      <div class="row spread" data-scene="${esc(n)}">
+        <b style="min-width:160px">${esc(n)}${n === o.scene ? ' <span class="tag ok">NOW</span>' : ''}</b>
+        <div class="row"><select data-rule="theme" aria-label="Theme on ${esc(n)}">${themeOpts(o.rules.sceneThemes[n])}</select>
+        <label class="row small"><input type="checkbox" data-rule="hide" ${o.rules.hideScenes.includes(n) ? 'checked' : ''}> Hide here</label></div>
+      </div>`).join('');
+    $('#obsOnlyLive').checked = !!o.rules.onlyWhenLive;
+  }
+
+  async function saveObsRules() {
+    const sceneThemes = {}, hideScenes = [];
+    for (const row of $$('#obsRules [data-scene]')) {
+      const n = row.dataset.scene;
+      const t = $('[data-rule="theme"]', row).value;
+      if (t) sceneThemes[n] = t;
+      if ($('[data-rule="hide"]', row).checked) hideScenes.push(n);
+    }
+    try { const r = await api('obs/rules', { sceneThemes, hideScenes, onlyWhenLive: $('#obsOnlyLive').checked }); state.obs = r.obs; toast('Saved'); }
+    catch (e) { toast(e.message); }
+  }
+
+  // Hotkey capture: focus the field, press the combination.
+  document.addEventListener('keydown', async e => {
+    const el = e.target;
+    if (!el.dataset || !el.dataset.hotkey) return;
+    e.preventDefault();
+    if (e.key === 'Tab') return;
+    let combo = '';
+    if (e.key !== 'Backspace' && e.key !== 'Delete') {
+      if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+      const parts = [];
+      if (e.ctrlKey) parts.push('Ctrl'); if (e.altKey) parts.push('Alt'); if (e.shiftKey) parts.push('Shift'); if (e.metaKey) parts.push('Win');
+      let k = e.code.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Arrow/, '');
+      if (/^Numpad\d$/.test(k)) k = 'NumPad' + k.slice(6);
+      parts.push(k);
+      combo = parts.join('+');
+    }
+    el.value = combo;
+    try { const r = await api('hotkeys', { [el.dataset.hotkey]: combo }); state.obs = r.obs; toast(combo ? 'Hotkey set: ' + combo : 'Hotkey cleared'); }
+    catch (err) { toast(err.message); }
+  });
 
   function currentThemeInfo() {
     const key = opts.theme || state?.theme?.key;
@@ -544,6 +704,7 @@
     if (route === 'obs' || (route === 'setup' && setupStep === 3)) {
       const sig = state.theme?.key;
       if (sig !== lastSig.obs) { lastSig.obs = sig; updateObsOutputs(false); }
+      updateObsLink();
     }
   }
 
@@ -557,6 +718,7 @@
   function updateHome() {
     const s = state;
     if (!s.server.running) setPill('Overlay', 'err', 'Server off');
+    else if (s.obs && s.obs.hiddenReason) setPill('Overlay', 'warn', s.obs.hiddenReason);
     else if (s.overlay.sources > 0) setPill('Overlay', 'ok', `On air · ${s.overlay.sources} OBS source${s.overlay.sources > 1 ? 's' : ''}`);
     else setPill('Overlay', 'info', 'Ready · no OBS source yet');
     const vis = visibleControllers();
@@ -650,6 +812,37 @@
     accent: async b => { try { state = await api('settings', { accent: b.dataset.color }); render(); } catch (e) { toast(e.message); } },
     filter: b => { themeFilter = b.dataset.f; store.set('themeFilter', themeFilter); renderThemeGrid(); },
     'reload-themes': async () => { themes = null; await renderThemeGrid(); toast('Theme list reloaded'); },
+    'obs-connect': async () => {
+      const body = { enabled: true, host: $('#obsHost').value, port: +$('#obsPort').value || 4455 };
+      const pw = $('#obsPassword').value;
+      if (pw) body.password = pw;
+      try { const r = await api('obs/connect', body); state.obs = r.obs; $('#obsPassword').value = ''; obsScenes = null; render(); toast('Connecting to OBS…'); }
+      catch (e) { toast(e.message); }
+    },
+    'obs-disconnect': async () => { try { const r = await api('obs/connect', { enabled: false }); state.obs = r.obs; render(); } catch (e) { toast(e.message); } },
+    'obs-forget': async () => {
+      if (!confirm('Forget the saved OBS password?')) return;
+      try { const r = await api('obs/connect', { forgetPassword: true, enabled: false }); state.obs = r.obs; render(); toast('Password removed'); } catch (e) { toast(e.message); }
+    },
+    'obs-refresh': () => loadObsScenes(),
+    'obs-add': async () => {
+      const t = currentThemeInfo();
+      const w = opts.crop && opts.cw > 0 ? Math.round(opts.cw) : t?.width;
+      const h = opts.crop && opts.ch > 0 ? Math.round(opts.ch) : t?.height;
+      const scene = $('#obsAddScene').value, name = $('#obsAddName').value.trim();
+      if (!w || !h) { toast('Pick a theme first, so the size is known'); return; }
+      if (!confirm(`Add "${name}" (${w}×${h}) to the OBS scene "${scene}"?`)) return;
+      try { await api('obs/add-source', { scene, name, url: builtUrl(false), width: w, height: h }); toast(`Added to "${scene}". Move and scale it in OBS.`); loadObsScenes(); }
+      catch (e) { toast(e.message); }
+    },
+    'obs-fix': async b => {
+      try { const r = await api('obs/fix-port', { name: b.dataset.name }); toast('Updated: ' + r.url); loadObsScenes(); }
+      catch (e) { toast(e.message); }
+    },
+    'toggle-hidden': async () => {
+      try { const r = await api('visibility', { hidden: !state.obs.manualHidden }); state.obs = r.obs; updateObsLink(); toast(r.obs.manualHidden ? 'Overlay hidden in OBS' : 'Overlay showing again'); }
+      catch (e) { toast(e.message); }
+    },
     'rotate-key': async () => {
       if (!confirm('Reset the panel key? Any OBS dock using the old URL stops working until you paste the new one.')) return;
       try {
@@ -687,7 +880,8 @@
       const v = el.type === 'checkbox' ? el.checked : +el.value;
       try { state = await api('settings', { [el.dataset.set]: v }); toast('Saved'); }
       catch (err) { toast(err.message); }
-    } else if (el.dataset.opt) setOpt(el.dataset.opt, el.value);
+    } else if (el.dataset.rule || el.id === 'obsOnlyLive') saveObsRules();
+    else if (el.dataset.opt) setOpt(el.dataset.opt, el.value);
     else if (el.dataset.actChange === 'family') { themeFilter = el.value || 'mine'; store.set('themeFilter', themeFilter); renderThemeGrid(); }
   });
   main.addEventListener('input', e => {

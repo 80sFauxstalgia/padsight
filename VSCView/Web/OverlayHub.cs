@@ -47,6 +47,19 @@ namespace VSCView.Web
 
         public string Url => $"http://127.0.0.1:{Port}/";
 
+        private volatile bool visible = true;
+
+        /// <summary>Show or hide the overlay in every OBS source (panel previews keep showing it).</summary>
+        public bool Visible
+        {
+            get => visible;
+            set
+            {
+                visible = value;
+                foreach (var ch in Snapshot()) ch.Visible = value;
+            }
+        }
+
         /// <summary>Supplied by the window: a JSON snapshot for /status.json.</summary>
         public Func<string> StatusJson { get; set; }
 
@@ -215,7 +228,7 @@ namespace VSCView.Web
                     }
                     if (channels.Count >= MaxChannels) { ui?.Dispose(); throw new InvalidOperationException("Too many overlay channels"); }
                 }
-                var ch = new OverlayChannel(key, ClampFps(fps), true);
+                var ch = new OverlayChannel(key, ClampFps(fps), true) { Visible = visible };
                 if (ui != null) ch.SetUi(ui);
                 channels[key] = ch;
                 created = true;

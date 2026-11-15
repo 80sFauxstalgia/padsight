@@ -74,6 +74,20 @@ The panel's OBS page builds these for you, with a live preview. Several Browser 
 ### Control it from inside OBS (dock)
 The control panel also works as an OBS dock. On the panel's OBS page, click **Copy dock URL**. In OBS, open **Docks › Custom Browser Docks**, name it, and paste the URL. The dock URL contains this PC's panel key, so paste it only into OBS and don't show it on stream.
 
+### Link PadSight to OBS (optional)
+PadSight can talk to OBS through OBS's own WebSocket server (OBS 28 or newer):
+1. In OBS, open **Tools › WebSocket Server Settings**, tick **Enable WebSocket server**, and click **Show Connect Info** to see the password.
+2. On the panel's OBS page, under **OBS link**, enter the password and click **Connect to OBS**. PadSight stores the password on this PC only, encrypted for your Windows account (DPAPI), and never shows it again.
+
+Once linked:
+* **Add it for me** creates the Browser Source in the scene you choose, at the right size, with "Shutdown source when not visible" on. It only ever adds PadSight's own overlay URL.
+* **PadSight sources in OBS** lists the sources that use PadSight, and **Fix port** points one at the current port if you changed it.
+* **Scene rules:**
+  * pick a theme per scene (for sources that follow the app);
+  * hide the overlay on scenes such as "Starting soon" or "BRB";
+  * or show it only while you're live or recording.
+* **Hotkeys** (on the same page, no OBS link needed): hide/show the overlay and switch to the next controller. They work system-wide, so a Stream Deck "hotkey" button can press them too.
+
 ### Settings
 The panel's **Settings** page covers follow mode, per-controller themes, auto-select, the default frame rate, the accent colour and the desktop preview window. Port and background colour are in the classic dialog (the panel's **Port and background colour…** button, or right-click › **Settings…** in the preview window):
 * **OBS Browser Source**: on/off, port, frame rate, the URL to copy, and live status (connected sources, render and encode time per frame).

@@ -64,6 +64,18 @@ namespace VSCView.Web
             Broadcast(MetaJson());
         }
 
+        private volatile bool visible = true;
+
+        /// <summary>
+        /// Whether OBS sources should show the overlay (PadSight's OBS rules and the hide hotkey). Sent inside the
+        /// "meta" message, because a client keeps only the latest pending text message.
+        /// </summary>
+        public bool Visible
+        {
+            get => visible;
+            set { if (visible == value) return; visible = value; Broadcast(MetaJson()); }
+        }
+
         public void Attach(WebSocketClient ws)
         {
             ws.Closed += c => { lock (clients) clients.Remove(c); };
@@ -76,9 +88,10 @@ namespace VSCView.Web
         private string MetaJson()
         {
             UI u = ui;
+            string v = visible ? "true" : "false";
             return u == null
-                ? "{\"type\":\"meta\",\"width\":0,\"height\":0}"
-                : $"{{\"type\":\"meta\",\"width\":{u.Width},\"height\":{u.Height},\"fps\":{Fps}}}";
+                ? $"{{\"type\":\"meta\",\"width\":0,\"height\":0,\"visible\":{v}}}"
+                : $"{{\"type\":\"meta\",\"width\":{u.Width},\"height\":{u.Height},\"fps\":{Fps},\"visible\":{v}}}";
         }
 
         private void Broadcast(string text)

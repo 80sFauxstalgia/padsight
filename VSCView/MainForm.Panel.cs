@@ -64,6 +64,7 @@ namespace VSCView
                 DefaultFps = settings.OverlayFps ?? 60,
                 ApiKey = settings.PanelKey,
                 Api = HandleApi,
+                Visible = HiddenReason() == null,
             };
         }
 
@@ -189,6 +190,14 @@ namespace VSCView
                 case "POST /api/settings": return OnUi(() => ApiSettings(Body(req)));
                 case "POST /api/open": return OnUi(() => ApiOpen(Body(req)));
                 case "POST /api/rotate-key": return OnUi(ApiRotateKey);
+                case "POST /api/visibility": return OnUi(() => ApiVisibility(Body(req)));
+                case "POST /api/hotkeys": return OnUi(() => ApiHotkeys(Body(req)));
+                case "POST /api/obs/connect": return OnUi(() => ApiObsConnect(Body(req)));
+                case "POST /api/obs/rules": return OnUi(() => ApiObsRules(Body(req)));
+                // These wait on OBS, so they run on the server thread, never the UI thread.
+                case "GET /api/obs/scenes": return ApiObsScenes();
+                case "POST /api/obs/add-source": return ApiObsAddSource(Body(req));
+                case "POST /api/obs/fix-port": return ApiObsFixPort(Body(req));
                 default: return ApiResponse.Error(404, "Unknown API " + route);
             }
         }
@@ -458,6 +467,7 @@ namespace VSCView
                 theme,
                 controllers,
                 overlay = new { sources, channels },
+                obs = ObsState(),
             };
             return JsonConvert.SerializeObject(state);
         }

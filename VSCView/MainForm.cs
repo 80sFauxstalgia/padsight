@@ -146,6 +146,8 @@ namespace VSCView
             if (settings.OverlayEnabled ?? true)
                 StartOverlayServer();
             LoadControllers(true);
+            InitObs();
+            RegisterHotkeys();
             BeginInvoke(new Action(AfterStartup));
         }
 
@@ -339,6 +341,7 @@ namespace VSCView
         /// </summary>
         private void ApplyRememberedTheme()
         {
+            if (sceneThemeActive) return; // an OBS scene rule decides the theme for now
             string kind = ControllerKind(ActiveController);
             if (kind == null) return;
             string file = ThemeForKind(kind, out bool remembered);
@@ -554,6 +557,7 @@ namespace VSCView
 
         protected override void WndProc(ref Message message)
         {
+            if (HandleHotkeyMessage(ref message)) return;
             base.WndProc(ref message);
 
             if (message.Msg == 0x84) // WM_NCHITTEST
@@ -1099,6 +1103,7 @@ namespace VSCView
         {
             ttimer?.Change(Timeout.Infinite, Timeout.Infinite);
             DisposePanel();
+            obs?.Dispose();
             overlayHub?.Dispose();
             DeviceManager.Shutdown();
             ControllerMemoHack?.ToList()?.ForEach(dr =>
