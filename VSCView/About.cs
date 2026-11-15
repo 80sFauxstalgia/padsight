@@ -133,11 +133,7 @@ namespace VSCView
                 foreach (string file in Directory.GetFiles(dir, "*.txt").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
                 {
                     sb.AppendLine("==== " + Path.GetFileNameWithoutExtension(file) + " ====");
-                    sb.AppendLine(File.ReadAllText(file).Replace("
-", "
-").Replace("
-", "
-").Trim());
+                    sb.AppendLine(File.ReadAllText(file).Replace("\r\n", "\n").Replace("\n", "\r\n").Trim());
                     sb.AppendLine();
                 }
                 var box = new TextBox
