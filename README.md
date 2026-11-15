@@ -28,6 +28,20 @@ This is a fork of [Nielk1/VSCView](https://github.com/Nielk1/VSCView). Every ori
 
 <!-- SCREENSHOT: docs/screenshots/theme-browser.png. Theme Browser with the 2026 Graphite theme selected. -->
 
+## Verify your download
+GitHub Actions builds every release from this repository's source. Each release includes:
+* `SHA256SUMS.txt` (and a `.sha256` file per zip). Check the zip matches before running it:
+  ```powershell
+  Get-FileHash .\VSCView-0.6.0-win-x64.zip -Algorithm SHA256
+  ```
+  The hash must equal the one listed in `SHA256SUMS.txt`.
+* A **build provenance attestation**: a signed record of which repository, commit and workflow produced the file. Verify it with the [GitHub CLI](https://cli.github.com/):
+  ```
+  gh attestation verify VSCView-0.6.0-win-x64.zip --repo 80sFauxstalgia/vscview-overlay
+  ```
+
+The release binaries are not Authenticode-signed yet, so Windows SmartScreen may show a warning the first time you run `VSCView.exe`.
+
 ## Adding it to OBS
 1. In VSCView, right-click and choose **OBS Browser Source › Copy URL (follows window theme)**. The default URL is `http://127.0.0.1:47817/`.
 2. In OBS, under **Sources**, click **+** › **Browser** › **Create new**. Then set:
