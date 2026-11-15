@@ -175,16 +175,7 @@ namespace VSCView
             tsmiOverlay.DropDownItems.Add(new ToolStripMenuItem("Copy URL (pinned to current theme)", null, (s, e) => CopyText(overlayHub.UrlForTheme(currentThemeFile))));
             tsmiOverlay.DropDownItems.Add(new ToolStripMenuItem("Open in browser", null, (s, e) => { try { Process.Start(overlayHub.Url); } catch { } }));
             tsmiOverlay.DropDownItems.Add(new ToolStripMenuItem("Status...", null, (s, e) =>
-                MessageBox.Show(this,
-                    $"Overlay: {(overlayHub.IsRunning ? overlayHub.Url : "off")}
-
-{overlayHub.Error}
-
-SDL3: {DeviceManager.SdlStatus}
-
-
-
-{overlayHub.StatsText()}",
+                MessageBox.Show(this, OverlayStatusText(),
                     "OBS Browser Source", MessageBoxButtons.OK, MessageBoxIcon.Information)));
             tsmiOverlay.DropDownItems.Add(new ToolStripSeparator());
             tsmiOverlay.DropDownItems.Add(tsmiOverlayEnabled);
