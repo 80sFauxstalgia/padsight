@@ -49,15 +49,54 @@ jobs:
         run: dotnet build VSCView.sln -c Release -nologo -v:minimal
 
       # ------------------------------------------------------------------------------------------
-      # AUTHENTICODE SIGNING SLOT - intentionally disabled.
-      # If code signing is approved (e.g. Azure Artifact Signing), sign the built binaries HERE:
-      # after the build, before packaging, so the zip, its checksum and the attestation all cover
-      # the signed files. Targets: VSCView/bin/Release/net462/VSCView.exe, ThemeFixer.exe,
-      # ExtendInput.dll. Credentials would come from repository secrets / OIDC federation.
-      # No secrets or signing configuration exist yet; this step never runs.
-      - name: Sign binaries (not configured)
+      # AUTHENTICODE SIGNING (Azure Artifact Signing, formerly "Trusted Signing") - DISABLED.
+      #
+      # Order matters: build -> SIGN -> package -> checksum -> attest, so the zip, its SHA-256 and the
+      # provenance attestation all cover the signed binaries. Only our own binaries are signed;
+      # third-party DLLs (SDL3, Flee, HidSharp, ...) ship as their publishers built them.
+      #
+      # To turn it on, once the Artifact Signing account and the Talaria Software LLC identity
+      # validation are complete:
+      #   1. Azure: create an app registration (or user-assigned managed identity) and give it the
+      #      "Artifact Signing Certificate Profile Signer" role on the certificate profile.
+      #   2. On that identity add a FEDERATED CREDENTIAL (OIDC) for this repository:
+      #        issuer  https://token.actions.githubusercontent.com
+      #        subject repo:80sFauxstalgia/vscview-overlay:ref:refs/tags/v*   (tags only; use an
+      #                environment-scoped subject instead if releases go through a GitHub environment)
+      #      Prefer this over a client secret: no long-lived secret is stored anywhere.
+      #   3. Repository SECRETS (Settings > Secrets and variables > Actions > Secrets):
+      #        AZURE_CLIENT_ID        - the app registration / managed identity client id
+      #        AZURE_TENANT_ID        - the Entra tenant id
+      #        AZURE_SUBSCRIPTION_ID  - the subscription holding the signing account
+      #   4. Repository VARIABLES (same page > Variables):
+      #        ARTIFACT_SIGNING_ENDPOINT  - regional endpoint, e.g. https://<region>.codesigning.azure.net/
+      #        ARTIFACT_SIGNING_ACCOUNT   - the Artifact Signing account name
+      #        ARTIFACT_SIGNING_PROFILE   - the certificate profile name
+      #   5. Change `if: ${{ false }}` on BOTH steps below to `if: ${{ startsWith(github.ref, 'refs/tags/v') }}`
+      #      and update the README's "Verify your download" note.
+      # The job already has `id-token: write`, which OIDC needs.
+      - name: Azure login for signing (OIDC) - disabled until configured
         if: ${{ false }}
-        run: echo "Authenticode signing is not configured."
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign binaries (Azure Artifact Signing) - disabled until configured
+        if: ${{ false }}
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0 (formerly azure/trusted-signing-action)
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files: |
+            ${{ github.workspace }}\VSCView\bin\Release\net462\VSCView.exe
+            ${{ github.workspace }}\VSCView\bin\Release\net462\ThemeFixer.exe
+            ${{ github.workspace }}\VSCView\bin\Release\net462\ExtendInput.dll
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
       # ------------------------------------------------------------------------------------------
 
       - name: Package zip

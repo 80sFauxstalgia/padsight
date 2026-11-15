@@ -40,7 +40,7 @@ GitHub Actions builds every release from this repository's source. Each release 
   gh attestation verify VSCView-0.6.0-win-x64.zip --repo 80sFauxstalgia/vscview-overlay
   ```
 
-The release binaries are not Authenticode-signed yet, so Windows SmartScreen may show a warning the first time you run `VSCView.exe`.
+**Code signing is planned but not active yet.** Releases will be Authenticode-signed for Talaria Software LLC through Azure Artifact Signing. Until then, Windows SmartScreen may warn the first time you run `VSCView.exe`. The checksum and the attestation above are the way to confirm the download is genuine.
 
 ## Adding it to OBS
 1. In VSCView, right-click and choose **OBS Browser Source › Copy URL (follows window theme)**. The default URL is `http://127.0.0.1:47817/`.
