@@ -15,16 +15,18 @@ This is a fork of [Nielk1/VSCView](https://github.com/Nielk1/VSCView). Every ori
   - Both controllers: real trackpad touch positions and trails, and the rear grips / back buttons.
   - 2026 controller extras: trackpad pressure, capacitive thumbstick touch, all four back buttons (L4/L5/R4/R5) and grip sense.
 - **True transparency in OBS.** VSCView streams its own rendering to a Browser Source over a local WebSocket, with no chroma-key fringing.
+- **Control panel.** A setup guide, live controller cards, a theme gallery with previews, an OBS URL builder and plain-language status, in its own window. The same panel also works as an **OBS dock**.
 - **Follow mode.** With both controllers connected, the overlay switches to the one you are using, along with the theme you last used for that kind of controller. One OBS source covers every game.
-- **Theme Browser** with live previews, plus new Graphite and Vaporwave Pixel themes for both Steam Controllers.
+- **New themes:** Graphite and Vaporwave Pixel for both Steam Controllers.
 - **Private by design.** The overlay server only listens on `127.0.0.1` (this PC) and sends nothing anywhere else.
 
 ## Quick start
 1. Download the latest release zip, extract it anywhere, and run `VSCView.exe`.
    * Requires Windows 10 or 11. The .NET Framework 4.8 it needs is built in.
-2. Right-click the window and open **Theme Browser…**. Pick a theme for your controller, then **Use in window**.
-3. Press any button on your controller. With follow mode on (the default), VSCView picks it up automatically.
-4. Add it to OBS as described below.
+2. The control panel opens with a three-step setup: press a button on your controller, pick a look, add it to OBS.
+3. Afterwards it lives in the tray. Click the tray icon to open the panel again; right-click it to exit.
+
+The classic borderless window is still there for anyone who used it: turn on **Settings › Desktop preview window** in the panel. It's on by default if you used an earlier version.
 
 <!-- SCREENSHOT: docs/screenshots/theme-browser.png. Theme Browser with the 2026 Graphite theme selected. -->
 
@@ -43,10 +45,10 @@ GitHub Actions builds every release from this repository's source. Each release 
 **Code signing is planned but not active yet.** Releases will be Authenticode-signed for Talaria Software LLC through Azure Artifact Signing. Until then, Windows SmartScreen may warn the first time you run `VSCView.exe`. The checksum and the attestation above are the way to confirm the download is genuine.
 
 ## Adding it to OBS
-1. In VSCView, right-click and choose **OBS Browser Source › Copy URL (follows window theme)**. The default URL is `http://127.0.0.1:47817/`.
+1. In the control panel, open **OBS** and click **Copy** next to the URL. It also shows the width and height to use. The default URL is `http://127.0.0.1:47817/`.
 2. In OBS, under **Sources**, click **+** › **Browser** › **Create new**. Then set:
    * **URL**: paste the URL.
-   * **Width × Height**: the theme size, e.g. **1000 × 760** for the Graphite and Vaporwave themes, or **995 × 720** for the original Steam Controller default theme. The Theme Browser shows each theme's size.
+   * **Width × Height**: the size shown on the OBS page, e.g. **1000 × 760** for the Graphite and Vaporwave themes.
    * **Custom CSS**: leave the default. The page is already transparent.
    * Optional: tick **Shutdown source when not visible**, so VSCView renders nothing while the overlay is off screen.
 3. Click **OK**, then move and scale the source like any other.
@@ -54,20 +56,26 @@ GitHub Actions builds every release from this repository's source. Each release 
 <!-- SCREENSHOT: docs/screenshots/obs-properties.png. OBS Browser Source properties filled in. -->
 <!-- SCREENSHOT: docs/screenshots/obs-scene.png. Overlay over gameplay in an OBS scene. -->
 
-You can minimise the VSCView window, but keep it running. If VSCView closes, the source simply goes transparent, and it reconnects on its own when VSCView starts again.
+You can close the panel, but keep VSCView running in the tray. If VSCView closes, the source simply goes transparent, and it reconnects on its own when VSCView starts again.
 
 ### URL options
 | Option | Example | What it does |
 | --- | --- | --- |
-| `theme` | `?theme=steamcontroller2026/graphite/Full.json` | Pins this source to one theme, independent of the window. The path is relative to the `themes` folder. **Copy URL (pinned to current theme)** and the Theme Browser's **Copy OBS URL** build it for you. |
+| `theme` | `?theme=steamcontroller2026/graphite/Full.json` | Pins this source to one theme, independent of the app. The path is relative to the `themes` folder. Each theme card's **Copy URL** builds it for you. |
 | `fps` | `&fps=30` | Render rate for this source (default 60). |
+| `idle` | `&idle=8` | Fades the overlay out after 8 seconds without input, and back in on the next input. |
+| `opacity` | `&opacity=0.8` | Overall opacity, from 0.1 to 1. |
+| `crop` | `&crop=0,380,1000,380` | Shows only part of the theme: left, top, width, height in theme pixels. Set the source to that width and height. |
 | `align` | `&align=bottom` | Where the image sits when the source's aspect ratio differs from the theme: `left`, `right`, `top` or `bottom`. |
 | `status` | `&status=1` | Shows the connection status in a corner (troubleshooting). |
 
-Several Browser Sources can show different themes at the same time. All of them follow the controller selected in VSCView.
+The panel's OBS page builds these for you, with a live preview. Several Browser Sources can show different themes at the same time; all of them follow the controller on the overlay.
+
+### Control it from inside OBS (dock)
+The control panel also works as an OBS dock. On the panel's OBS page, click **Copy dock URL**. In OBS, open **Docks › Custom Browser Docks**, name it, and paste the URL. The dock URL contains this PC's panel key, so paste it only into OBS and don't show it on stream.
 
 ### Settings
-Right-click › **Settings…**:
+The panel's **Settings** page covers follow mode, per-controller themes, auto-select, the default frame rate, the accent colour and the desktop preview window. Port and background colour are in the classic dialog (the panel's **Port and background colour…** button, or right-click › **Settings…** in the preview window):
 * **OBS Browser Source**: on/off, port, frame rate, the URL to copy, and live status (connected sources, render and encode time per frame).
 * **Controllers**:
   * auto-select a lone controller;
@@ -89,6 +97,8 @@ Right-click › **Settings…**:
   * it leaves the 2015 controller to the HID decoder.
 
 ## Troubleshooting
+* **Start here:** the panel's **Help & status** page explains every controller and OBS state and what to do next. **Copy diagnostics** puts a report on the clipboard for bug reports.
+* **The panel window doesn't open.** It uses Microsoft Edge WebView2, which is built into Windows 11 and current Windows 10. Without it, the panel opens in your default browser instead.
 * **The OBS source is empty.**
   * Check that VSCView is running and has a theme loaded.
   * Add `&status=1` to the URL to see whether it connects.

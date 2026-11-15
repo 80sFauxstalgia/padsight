@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Padsight</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<div id="app" class="app">
+  <nav class="nav" aria-label="Main">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 28 28" aria-hidden="true"><rect x="2" y="7" width="24" height="14" rx="7" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="14" r="2.5" fill="currentColor"/><circle cx="19" cy="14" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      <span>PADSIGHT</span>
+    </div>
+    <div class="nav-links" role="list">
+      <button type="button" role="listitem" data-nav="home">Home</button>
+      <button type="button" role="listitem" data-nav="themes">Themes</button>
+      <button type="button" role="listitem" data-nav="obs">OBS</button>
+      <button type="button" role="listitem" data-nav="help">Help &amp; status</button>
+      <button type="button" role="listitem" data-nav="settings">Settings</button>
+    </div>
+    <div class="nav-foot" id="navFoot"></div>
+  </nav>
+  <main id="main" class="main" tabindex="-1"></main>
+</div>
+<div id="offline" class="offline" hidden>
+  <div class="offline-card">
+    <p class="eyebrow">CONNECTION LOST</p>
+    <h1>Padsight isn't answering</h1>
+    <p id="offlineText">Start Padsight again, or reopen this panel from its tray icon. This page reconnects by itself.</p>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="panel.js"></script>
+</body>
+</html>

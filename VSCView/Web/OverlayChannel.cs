@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -34,6 +35,8 @@ namespace VSCView.Web
         public long FramesSent { get; private set; }
         public long FramesSkipped { get; private set; }
         public int ClientCount { get { lock (clients) return clients.Count; } }
+        /// <summary>Clients other than the control panel's own previews, i.e. OBS sources and browsers.</summary>
+        public int ExternalClientCount { get { lock (clients) return clients.Count(c => !c.IsPreview); } }
 
         public OverlayChannel(string key, int fps, bool ownsUi)
         {

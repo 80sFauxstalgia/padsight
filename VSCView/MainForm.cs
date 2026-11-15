@@ -69,7 +69,6 @@ namespace VSCView
             DeviceManager = new DeviceManager();
 
             ControllerData = new ControllerData();
-            overlayHub = new Web.OverlayHub(ControllerData);
             state = new ControllerState();
             // 5s lookback for smoothing
             sensorData = new SensorCollector(5, true);
@@ -83,7 +82,8 @@ namespace VSCView
 
             LoadThemes();
             LoadSettings();
-            overlayHub.DefaultFps = settings.OverlayFps ?? 60;
+            InitPanel();
+            overlayHub = CreateHub();
             AddOverlayMenu();
             if (File.Exists("ctrl.last"))
             {
@@ -142,9 +142,11 @@ namespace VSCView
         /// <param name="e"></param>
         private void MainForm_Load(object sender, EventArgs e)
         {
+            if (!FirstLoad()) return;
             if (settings.OverlayEnabled ?? true)
                 StartOverlayServer();
             LoadControllers(true);
+            BeginInvoke(new Action(AfterStartup));
         }
 
         #region OBS Browser Source
@@ -168,7 +170,7 @@ namespace VSCView
                 settings.OverlayEnabled = !(settings.OverlayEnabled ?? true);
                 SaveSettings();
                 if (settings.OverlayEnabled ?? true) StartOverlayServer();
-                else { overlayHub.Dispose(); overlayHub = new Web.OverlayHub(ControllerData) { DefaultFps = settings.OverlayFps ?? 60 }; if (currentThemeFile != null) overlayHub.SetMainTheme(currentThemeFile); }
+                else { overlayHub.Dispose(); overlayHub = CreateHub(); if (currentThemeFile != null) overlayHub.SetMainTheme(currentThemeFile); }
                 UpdateOverlayMenu();
             });
             tsmiOverlay.DropDownItems.Add(new ToolStripMenuItem("Copy URL (follows window theme)", null, (s, e) => CopyText(overlayHub.Url)));
@@ -255,9 +257,15 @@ namespace VSCView
             if (restart)
             {
                 overlayHub.Dispose();
-                overlayHub = new Web.OverlayHub(ControllerData) { DefaultFps = settings.OverlayFps ?? 60 };
+                overlayHub = CreateHub();
                 if (currentThemeFile != null) overlayHub.SetMainTheme(currentThemeFile);
                 if (settings.OverlayEnabled ?? true) StartOverlayServer();
+                // The panel is served by the same server, so follow it to the new port.
+                if (panelForm != null && !panelForm.IsDisposed)
+                {
+                    if (overlayHub.IsRunning) panelForm.Navigate(overlayHub.PanelUrl, $"http://127.0.0.1:{overlayHub.Port}/");
+                    else panelForm.Close();
+                }
             }
             UpdateOverlayMenu();
             AutoLoadController();
@@ -286,13 +294,30 @@ namespace VSCView
 
         private void ApplyRememberedTheme()
         {
-            if (!(settings.RememberThemePerController ?? true)) return;
             string kind = ControllerKind(ActiveController);
-            if (kind == null || settings.ThemeByController == null) return;
-            if (!settings.ThemeByController.TryGetValue(kind, out string file) || !File.Exists(file)) return;
+            if (kind == null) return;
+            string file = null;
+            bool remembered = (settings.RememberThemePerController ?? true) && settings.ThemeByController != null &&
+                              settings.ThemeByController.TryGetValue(kind, out file) && File.Exists(file);
+            // First run: nothing chosen yet, so show a sensible default instead of an empty overlay.
+            if (!remembered) file = currentThemeFile == null ? DefaultThemeFor(kind) : null;
+            if (file == null) return;
             if (currentThemeFile != null && Path.GetFullPath(file).Equals(Path.GetFullPath(currentThemeFile), StringComparison.OrdinalIgnoreCase)) return;
             if (InvokeRequired) BeginInvoke(new Action(() => LoadThemeSafe(file)));
             else LoadThemeSafe(file);
+        }
+
+        /// <summary>A built-in theme for a kind of controller, used until the user picks one.</summary>
+        private static string DefaultThemeFor(string kind)
+        {
+            string[] candidates;
+            switch (kind)
+            {
+                case "DEVICE_SC2026": candidates = new[] { @"themes\steamcontroller2026\graphite\Full.json" }; break;
+                case "DEVICE_SC": candidates = new[] { @"themes\steamcontroller\graphite\Full.json" }; break;
+                default: return null;
+            }
+            return candidates.FirstOrDefault(File.Exists);
         }
 
         System.Windows.Forms.Timer followTimer;
@@ -315,7 +340,10 @@ namespace VSCView
             // they would always "win". Ignore them whenever a controller with its own driver is connected.
             if (present.Any(c => !(c is XInputController)))
                 present = present.Where(c => !(c is XInputController)).ToList();
-            if (present.Count < 2) return; // nothing to follow
+            if (present.Count == 0) return;
+            // One controller already on the overlay: nothing to follow. One controller and nothing on the
+            // overlay yet: put it there as soon as it's used ("press any button" in the setup).
+            if (present.Count == 1 && ActiveController == present[0] && ActiveController.IsPresent) return;
 
             DateTime now = DateTime.UtcNow;
             foreach (IController c in present)
@@ -1019,6 +1047,7 @@ namespace VSCView
         private void MainForm_FormClosed(object sender, FormClosedEventArgs e)
         {
             ttimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            DisposePanel();
             overlayHub?.Dispose();
             DeviceManager.Shutdown();
             ControllerMemoHack?.ToList()?.ForEach(dr =>

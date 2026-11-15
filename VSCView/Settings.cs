@@ -29,5 +29,12 @@ namespace VSCView
         public bool? FollowActiveController { get; set; }
         public bool? RememberThemePerController { get; set; }
         public Dictionary<string, string> ThemeByController { get; set; }
+
+        // Control panel
+        public string PanelKey { get; set; }          // per-install key for the panel API (local only)
+        public bool? OpenPanelOnStart { get; set; }
+        public bool? ShowPreviewWindow { get; set; }  // the classic borderless window
+        public bool? SetupDone { get; set; }
+        public string Accent { get; set; }            // "#rrggbb", null = default cyan
     }
 }

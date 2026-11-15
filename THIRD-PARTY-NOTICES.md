@@ -11,6 +11,7 @@ VSCView ships the components below next to `VSCView.exe`. Each license text is i
 | [HidSharp](https://www.zer7.com/software/hidsharp) | 2.1.0 | Apache-2.0 | `HidSharp.txt` |
 | [SharpDX](https://github.com/sharpdx/SharpDX) and SharpDX.XInput | 4.2.0 | MIT | `SharpDX.txt` |
 | [NAudio](https://github.com/naudio/NAudio) | 1.10.0 | Ms-PL | `NAudio.txt` |
+| [Microsoft Edge WebView2 SDK](https://www.nuget.org/packages/Microsoft.Web.WebView2) (`Microsoft.Web.WebView2.*.dll`, `WebView2Loader.dll`); the WebView2 runtime itself is part of Windows | 1.0.2903.40 | BSD-3-Clause | `WebView2.txt` |
 | [Newtonsoft.Json](https://www.newtonsoft.com/json) | 13.0.3 | MIT | `Newtonsoft.Json.txt` |
 | .NET packages: System.Memory, System.Buffers, System.Numerics.Vectors, System.Runtime.CompilerServices.Unsafe, System.ValueTuple, System.Reflection, System.Resources.Extensions, System.Security.AccessControl, System.Security.Principal.Windows, Microsoft.Win32.Registry | various | MIT | `dotnet-packages.txt` |
 
