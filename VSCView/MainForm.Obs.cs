@@ -130,8 +130,19 @@ namespace VSCView
         {
             string oldHost = settings.ObsHost ?? "127.0.0.1";
             int oldPort = settings.ObsPort ?? 4455;
-            if (b["host"] != null) settings.ObsHost = string.IsNullOrWhiteSpace((string)b["host"]) ? null : ((string)b["host"]).Trim();
-            if (b["port"] != null) settings.ObsPort = (int)b["port"];
+            int? newPort = b["port"] != null ? (int?)b["port"] : null;
+            if (b["host"] != null)
+            {
+                if (!NormalizeObsAddress((string)b["host"], out string host, out int? pastedPort, out string error))
+                    return ApiResponse.Error(400, error);
+                settings.ObsHost = host == "127.0.0.1" ? null : host;
+                if (pastedPort != null) newPort = pastedPort; // "ws://192.168.1.5:4455" carries its own port
+            }
+            if (newPort != null)
+            {
+                if (newPort < 1 || newPort > 65535) return ApiResponse.Error(400, "The port must be between 1 and 65535 (OBS uses 4455 unless you changed it).");
+                settings.ObsPort = newPort;
+            }
             // A saved password belongs to the OBS it was entered for. Never answer another host's challenge with
             // it (a hostile server could brute-force the hash offline): a new address needs the password again.
             bool moved = !string.Equals(settings.ObsHost ?? "127.0.0.1", oldHost, StringComparison.OrdinalIgnoreCase) || (settings.ObsPort ?? 4455) != oldPort;
@@ -142,6 +153,27 @@ namespace VSCView
             SaveSettings();
             if (settings.ObsEnabled == true) StartObs(); else StopObs();
             return ApiResponse.Ok(JsonConvert.SerializeObject(new { obs = ObsState() }));
+        }
+
+        /// <summary>
+        /// Accepts what people paste from OBS's "Show Connect Info": a bare host or IP, "host:port", or a full
+        /// "ws://host:port/" server URL. Returns the host alone, plus the port when one was included.
+        /// </summary>
+        internal static bool NormalizeObsAddress(string input, out string host, out int? port, out string error)
+        {
+            host = "127.0.0.1"; port = null; error = null;
+            string s = (input ?? "").Trim();
+            if (s.Length == 0) return true; // empty = this PC
+            if (!s.Contains("://")) s = "ws://" + s;
+            if (!Uri.TryCreate(s, UriKind.Absolute, out Uri u) || !(u.Scheme == "ws" || u.Scheme == "wss" || u.Scheme == "http" || u.Scheme == "https")
+                || string.IsNullOrEmpty(u.Host) || !string.IsNullOrEmpty(u.UserInfo) || (u.AbsolutePath != "/" && u.AbsolutePath != ""))
+            {
+                error = "That doesn't look like an address. Use 127.0.0.1 when OBS runs on this PC, or the other PC's IP address, e.g. 192.168.1.20.";
+                return false;
+            }
+            host = u.Host.Trim('[', ']');
+            if (!u.IsDefaultPort) port = u.Port;
+            return true;
         }
 
         /// <summary>POST /api/obs/rules {sceneThemes?, hideScenes?, onlyWhenLive?}.</summary>

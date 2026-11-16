@@ -204,7 +204,20 @@ api('obs/connect', {'enabled': True, 'port': a.mock_port, 'password': 'testpass'
 s = wait_for(lambda s: s['status'] == 'Connected', 'back')
 check('re-entering the password reconnects', s['status'] == 'Connected', s)
 
-# 12. disconnect
+# 12. addresses pasted from OBS's "Show Connect Info"
+api('obs/connect', {'enabled': False})
+code, r = api('obs/connect', {'enabled': True, 'host': 'ws://127.0.0.1:%d/' % a.mock_port, 'port': 4455, 'password': 'testpass'})
+s = wait_for(lambda s: s['status'] == 'Connected', 'pasted url')
+check('a pasted ws:// server URL works, port taken from it', code == 200 and s['status'] == 'Connected' and s['port'] == a.mock_port and s['host'] == '127.0.0.1', s)
+code, r = api('obs/connect', {'enabled': True, 'host': '127.0.0.1:%d' % a.mock_port, 'password': 'testpass'})
+s = wait_for(lambda s: s['status'] == 'Connected', 'host:port')
+check('host:port works', code == 200 and s['status'] == 'Connected' and s['port'] == a.mock_port, s)
+code, r = api('obs/connect', {'enabled': True, 'host': 'not a host!!'})
+check('a nonsense address gets a clear message', code == 400 and '127.0.0.1' in r.get('error', ''), (code, r))
+code, r = api('obs/connect', {'enabled': True, 'port': 70000})
+check('an impossible port gets a clear message', code == 400 and '4455' in r.get('error', ''), (code, r))
+
+# 13. disconnect
 api('obs/connect', {'enabled': False})
 s = wait_for(lambda s: s['status'] == 'Off', 'off')
 check('disconnects', s['status'] == 'Off', s)

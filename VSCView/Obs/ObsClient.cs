@@ -29,6 +29,7 @@ namespace VSCView.Obs
         private readonly ConcurrentDictionary<string, TaskCompletionSource<JObject>> pending = new ConcurrentDictionary<string, TaskCompletionSource<JObject>>();
         private CancellationTokenSource cts;
         private ClientWebSocket socket;
+        private volatile bool handshakeDone; // handshake done on the current socket
         private readonly SemaphoreSlim sendLock = new SemaphoreSlim(1, 1);
 
         public string Host { get; private set; } = "127.0.0.1";
@@ -66,6 +67,7 @@ namespace VSCView.Obs
         {
             try { cts?.Cancel(); } catch { }
             cts = null;
+            handshakeDone = false;
             try { socket?.Abort(); } catch { }
             socket = null;
             FailPending("Disconnected");
@@ -87,6 +89,7 @@ namespace VSCView.Obs
             int backoff = 1000;
             while (!token.IsCancellationRequested)
             {
+                handshakeDone = false;
                 SetStatus(ObsStatus.Connecting, null);
                 var ws = new ClientWebSocket();
                 ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
@@ -97,7 +100,8 @@ namespace VSCView.Obs
                     using (var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(token))
                     {
                         connectTimeout.CancelAfter(5000);
-                        await ws.ConnectAsync(new Uri($"ws://{Host}:{Port}"), connectTimeout.Token).ConfigureAwait(false);
+                        var target = new UriBuilder("ws", Host, Port).Uri; // also brackets IPv6 addresses
+                        await ws.ConnectAsync(target, connectTimeout.Token).ConfigureAwait(false);
                     }
                     JObject hello = await ReceiveAsync(ws, token).ConfigureAwait(false);
                     if ((int?)hello?["op"] != 0) throw new IOException("Not an obs-websocket server");
@@ -122,10 +126,12 @@ namespace VSCView.Obs
                         throw new IOException(authFailed ? "OBS refused the password" : "OBS closed the connection: " + ws.CloseStatusDescription);
                     }
 
-                    SetStatus(ObsStatus.Connected, null);
+                    // Read the current scene and outputs first, so "Connected" never shows with an unknown scene.
+                    handshakeDone = true;
                     backoff = 1000;
                     var readLoop = ReadLoopAsync(ws, token);
                     await RefreshStateAsync().ConfigureAwait(false);
+                    SetStatus(ObsStatus.Connected, null);
                     await readLoop.ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
@@ -145,6 +151,7 @@ namespace VSCView.Obs
                 }
                 finally
                 {
+                    handshakeDone = false;
                     try { ws.Abort(); } catch { }
                     FailPending("Disconnected");
                 }
@@ -230,7 +237,7 @@ namespace VSCView.Obs
         public async Task<JObject> RequestAsync(string type, JObject data = null, int timeoutMs = 5000)
         {
             ClientWebSocket ws = socket;
-            if (ws == null || Status != ObsStatus.Connected) throw new InvalidOperationException("Not connected to OBS");
+            if (ws == null || !handshakeDone) throw new InvalidOperationException("Not connected to OBS");
             string id = Guid.NewGuid().ToString("N");
             var tcs = new TaskCompletionSource<JObject>(TaskCreationOptions.RunContinuationsAsynchronously);
             pending[id] = tcs;

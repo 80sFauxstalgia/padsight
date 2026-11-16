@@ -386,7 +386,8 @@
         <div class="row spread"><h2 class="label">OBS link</h2><span class="tag" id="obsStatusTag">…</span></div>
         <p class="sub" id="obsStatusText"></p>
         <div class="form">
-          <label class="field">Address<input type="text" id="obsHost" value="${esc(o.host || '127.0.0.1')}" spellcheck="false"></label>
+          <label class="field">Address<input type="text" id="obsHost" value="${esc(o.host || '127.0.0.1')}" spellcheck="false">
+            <span class="small">Leave 127.0.0.1 when OBS runs on this PC. Pasting the server URL from OBS works too.</span></label>
           <label class="field">Port<input type="number" id="obsPort" min="1" max="65535" value="${esc(o.port || 4455)}"></label>
           <label class="field">Password<input type="password" id="obsPassword" autocomplete="off" placeholder="${o.hasPassword ? 'Saved (type to replace)' : 'From OBS'}"></label>
         </div>
@@ -813,7 +814,11 @@
     filter: b => { themeFilter = b.dataset.f; store.set('themeFilter', themeFilter); renderThemeGrid(); },
     'reload-themes': async () => { themes = null; await renderThemeGrid(); toast('Theme list reloaded'); },
     'obs-connect': async () => {
-      const body = { enabled: true, host: $('#obsHost').value, port: +$('#obsPort').value || 4455 };
+      // Accept what OBS's "Show Connect Info" offers: "ws://192.168.1.5:4455", "host:port" or a bare host.
+      let host = $('#obsHost').value.trim(), port = +$('#obsPort').value || 4455;
+      const m = /^(?:wss?:\/\/|https?:\/\/)?([^/:\s]+|\[[^\]]+\])(?::(\d+))?\/?$/i.exec(host);
+      if (m) { host = m[1]; if (m[2]) port = +m[2]; $('#obsHost').value = host; $('#obsPort').value = port; }
+      const body = { enabled: true, host, port };
       const pw = $('#obsPassword').value;
       if (pw) body.password = pw;
       try { const r = await api('obs/connect', body); state.obs = r.obs; $('#obsPassword').value = ''; obsScenes = null; render(); toast('Connecting to OBS…'); }
