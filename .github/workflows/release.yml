@@ -63,6 +63,8 @@ jobs:
       # validation are complete:
       #   1. Azure: create an app registration (or user-assigned managed identity) and give it the
       #      "Artifact Signing Certificate Profile Signer" role on the certificate profile.
+      #   (Full checklist: docs/code-signing.md. Do step 2 BEFORE pushing any v* tag:
+      #    GitHub auto-creates a missing environment with no rules.)
       #   2. GitHub: Settings > Environments > New environment "release". Under Deployment branches
       #      and tags choose "Selected branches and tags" and add the tag rule  v*  only, so just
       #      release tags can run in it. (The job above already uses this environment for tag builds.)
