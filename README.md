@@ -39,7 +39,7 @@ GitHub Actions builds every release from this repository's source. Each release 
   The hash must equal the one listed in `SHA256SUMS.txt`.
 * A **build provenance attestation**: a signed record of which repository, commit and workflow produced the file. Verify it with the [GitHub CLI](https://cli.github.com/):
   ```
-  gh attestation verify PadSight-0.7.0-win-x64.zip --repo 80sFauxstalgia/vscview-overlay
+  gh attestation verify PadSight-0.7.0-win-x64.zip --repo 80sFauxstalgia/padsight
   ```
 
 **Code signing is planned but not active yet.** Releases will be Authenticode-signed for Talaria Software LLC through Azure Artifact Signing. Until then, Windows SmartScreen may warn the first time you run `PadSight.exe`. The checksum and the attestation above are the way to confirm the download is genuine.
@@ -135,8 +135,8 @@ The panel's **Settings** page covers follow mode, per-controller themes, auto-se
 Requirements: Windows and the [.NET SDK](https://dotnet.microsoft.com/download), version 8 or newer. Then:
 
 ```
-git clone --recursive https://github.com/80sFauxstalgia/vscview-overlay
-cd vscview-overlay
+git clone --recursive https://github.com/80sFauxstalgia/padsight
+cd padsight
 dotnet build VSCView.sln -c Release
 ```
 

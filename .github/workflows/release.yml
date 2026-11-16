@@ -61,7 +61,7 @@ jobs:
       #      "Artifact Signing Certificate Profile Signer" role on the certificate profile.
       #   2. On that identity add a FEDERATED CREDENTIAL (OIDC) for this repository:
       #        issuer  https://token.actions.githubusercontent.com
-      #        subject repo:80sFauxstalgia/vscview-overlay:ref:refs/tags/v*   (tags only; use an
+      #        subject repo:80sFauxstalgia/padsight:ref:refs/tags/v*   (tags only; use an
       #                environment-scoped subject instead if releases go through a GitHub environment)
       #      Prefer this over a client secret: no long-lived secret is stored anywhere.
       #   3. Repository SECRETS (Settings > Secrets and variables > Actions > Secrets):
