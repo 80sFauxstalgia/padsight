@@ -68,6 +68,12 @@ namespace VSCView.Obs
             try { cts?.Cancel(); } catch { }
             cts = null;
             handshakeDone = false;
+            var old = socket;
+            if (old != null && old.State == WebSocketState.Open)
+            {
+                // Polite close on disconnect, bounded so the UI never waits long.
+                try { old.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None).Wait(500); } catch { }
+            }
             try { socket?.Abort(); } catch { }
             socket = null;
             FailPending("Disconnected");
@@ -128,7 +134,7 @@ namespace VSCView.Obs
 
                     // Read the current scene and outputs first, so "Connected" never shows with an unknown scene.
                     handshakeDone = true;
-                    backoff = 1000;
+                    backoff = 3000; // if this session drops (OBS restarting), give it a moment before the first retry
                     var readLoop = ReadLoopAsync(ws, token);
                     await RefreshStateAsync().ConfigureAwait(false);
                     SetStatus(ObsStatus.Connected, null);
@@ -282,7 +288,18 @@ namespace VSCView.Obs
                 while (true)
                 {
                     WebSocketReceiveResult r = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), token).ConfigureAwait(false);
-                    if (r.MessageType == WebSocketMessageType.Close) return null;
+                    if (r.MessageType == WebSocketMessageType.Close)
+                    {
+                        // Answer OBS's close (e.g. it restarts its WebSocket server) instead of dropping the socket,
+                        // so OBS never waits on PadSight during shutdown. Bounded, and best effort.
+                        try
+                        {
+                            using (var t = new CancellationTokenSource(1000))
+                                await ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "", t.Token).ConfigureAwait(false);
+                        }
+                        catch { }
+                        return null;
+                    }
                     ms.Write(buffer, 0, r.Count);
                     if (ms.Length > 4 * 1024 * 1024) throw new IOException("OBS message too large");
                     if (r.EndOfMessage) break;

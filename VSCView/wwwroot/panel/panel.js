@@ -466,7 +466,8 @@
 
     const linked = o.status === 'Connected';
     $('#obsLinked').hidden = !linked;
-    if (linked && (!obsScenes || Date.now() - obsScenesAt > 5000)) loadObsScenes();
+    // Scenes and sources rarely change: refresh every 30 s while this page is open (and on Refresh / after changes).
+    if (linked && (!obsScenes || Date.now() - obsScenesAt > 30000)) loadObsScenes();
     if (linked && obsScenes) renderObsLinked();
   }
 

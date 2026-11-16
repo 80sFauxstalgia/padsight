@@ -217,7 +217,18 @@ check('a nonsense address gets a clear message', code == 400 and '127.0.0.1' in 
 code, r = api('obs/connect', {'enabled': True, 'port': 70000})
 check('an impossible port gets a clear message', code == 400 and '4455' in r.get('error', ''), (code, r))
 
-# 13. disconnect
+# 13. OBS restarts its WebSocket server (as when its settings dialog is saved)
+api('obs/connect', {'enabled': True, 'host': '127.0.0.1', 'port': a.mock_port, 'password': 'testpass'})
+wait_for(lambda s: s['status'] == 'Connected', 'connected before restart')
+control('/restart?down=5')
+time.sleep(6)
+st = control('/state')
+check('answers the server close politely', st['close_replies'] >= 1, st['close_replies'])
+check('no hammering while OBS restarts (<= 3 tries in 5 s)', st['refused'] <= 3, st['refused'])
+s = wait_for(lambda s: s['status'] == 'Connected', 'reconnected', timeout=20)
+check('reconnects by itself afterwards', s['status'] == 'Connected', s)
+
+# 14. disconnect
 api('obs/connect', {'enabled': False})
 s = wait_for(lambda s: s['status'] == 'Off', 'off')
 check('disconnects', s['status'] == 'Off', s)

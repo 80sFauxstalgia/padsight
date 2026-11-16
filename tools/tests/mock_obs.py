@@ -39,6 +39,9 @@ state = {
     },
     'scene_items': {},
     'auth_attempts': 0,  # Identify messages that carried an authentication string
+    'close_replies': 0,  # clients that answered our close frame (a polite close)
+    'refused': 0,        # connection attempts while "restarting"
+    'down_until': 0.0,
 }
 clients = set()
 INITIAL = copy.deepcopy(state)
@@ -123,6 +126,11 @@ def handle_request(rtype, data):
 
 
 async def ws_handler(reader, writer, password):
+    import time
+    if time.time() < state['down_until']:
+        state['refused'] += 1
+        writer.close()
+        return
     req = b''
     while b'\r\n\r\n' not in req:
         chunk = await reader.read(1024)
@@ -167,6 +175,7 @@ async def ws_handler(reader, writer, password):
         while True:
             op, data = await read_frame(reader)
             if op == 8:
+                state['close_replies'] += 1
                 return
             if op == 9:
                 writer.write(frame(10, data))
@@ -201,7 +210,19 @@ async def control_handler(reader, writer):
     u = urllib.parse.urlparse(path)
     q = dict(urllib.parse.parse_qsl(u.query))
     body = {'ok': True}
-    if u.path == '/reset':
+    if u.path == '/restart':
+        # Like OBS restarting its WebSocket server: close every client, refuse connections for a while.
+        import time
+        state['down_until'] = time.time() + float(q.get('down', '4'))
+        state['refused'] = 0
+        state['close_replies'] = 0
+        for (w, subs) in list(clients):
+            try:
+                w.write(frame(8, struct.pack('>H', 1001) + b'Server restarting'))
+                await w.drain()
+            except Exception:
+                pass
+    elif u.path == '/reset':
         state.clear()
         state.update(copy.deepcopy(INITIAL))
     elif u.path == '/scene':
@@ -215,7 +236,8 @@ async def control_handler(reader, writer):
         await broadcast_event('RecordStateChanged', {'outputActive': state['recording'], 'outputState': 'x'}, 1 << 6)
     elif u.path == '/state':
         body = {'scene': state['scene'], 'streaming': state['streaming'], 'inputs': {k: v[1] for k, v in state['inputs'].items()},
-                'scene_items': state['scene_items'], 'auth_attempts': state['auth_attempts']}
+                'scene_items': state['scene_items'], 'auth_attempts': state['auth_attempts'],
+                'close_replies': state['close_replies'], 'refused': state['refused']}
     data = json.dumps(body).encode()
     writer.write(b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n' % len(data) + data)
     await writer.drain()
