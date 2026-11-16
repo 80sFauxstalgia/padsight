@@ -114,6 +114,7 @@ The panel's **Settings** page covers follow mode, per-controller themes, auto-se
 
 ## Troubleshooting
 * **Start here:** the panel's **Help & status** page explains every controller and OBS state and what to do next. **Copy diagnostics** puts a report on the clipboard for bug reports.
+* **OBS link says "not reachable" or "wrong password" after OBS restarted.** Avoid changing OBS's own WebSocket Server Settings while tools are connected: in testing, that restart once hung OBS and reset its WebSocket settings (server off, new password). If that happens, restart OBS, turn the WebSocket server back on, and paste the new password into PadSight.
 * **The panel window doesn't open.** It uses Microsoft Edge WebView2, which is built into Windows 11 and current Windows 10. Without it, the panel opens in your default browser instead.
 * **The OBS source is empty.**
   * Check that PadSight is running and has a theme loaded.
