@@ -24,6 +24,10 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    # Tag builds run in the "release" environment: the Azure federated credential trusts exactly
+    # repo:80sFauxstalgia/padsight:environment:release, and the environment only allows v* tags.
+    # Manual dry runs (workflow_dispatch) use no environment, so they never get signing access.
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     permissions:
       contents: write          # only used by the draft-release step on tag pushes
       id-token: write          # attestation: mint the OIDC token for Sigstore
@@ -59,20 +63,27 @@ jobs:
       # validation are complete:
       #   1. Azure: create an app registration (or user-assigned managed identity) and give it the
       #      "Artifact Signing Certificate Profile Signer" role on the certificate profile.
-      #   2. On that identity add a FEDERATED CREDENTIAL (OIDC) for this repository:
-      #        issuer  https://token.actions.githubusercontent.com
-      #        subject repo:80sFauxstalgia/padsight:ref:refs/tags/v*   (tags only; use an
-      #                environment-scoped subject instead if releases go through a GitHub environment)
-      #      Prefer this over a client secret: no long-lived secret is stored anywhere.
-      #   3. Repository SECRETS (Settings > Secrets and variables > Actions > Secrets):
+      #   2. GitHub: Settings > Environments > New environment "release". Under Deployment branches
+      #      and tags choose "Selected branches and tags" and add the tag rule  v*  only, so just
+      #      release tags can run in it. (The job above already uses this environment for tag builds.)
+      #   3. On the Azure identity add a FEDERATED CREDENTIAL (OIDC) for this repository:
+      #        issuer   https://token.actions.githubusercontent.com
+      #        subject  repo:80sFauxstalgia/padsight:environment:release
+      #        audience api://AzureADTokenExchange
+      #      Entra compares the subject exactly (no wildcards outside the preview "flexible"
+      #      credentials), so a "ref:refs/tags/v*" subject would never match; the environment's v* tag
+      #      rule is what keeps signing to release tags. Prefer this over a client secret: no
+      #      long-lived secret is stored anywhere.
+      #   4. Repository SECRETS (Settings > Secrets and variables > Actions > Secrets), or the same
+      #      names as secrets of the "release" environment to keep them away from other jobs:
       #        AZURE_CLIENT_ID        - the app registration / managed identity client id
       #        AZURE_TENANT_ID        - the Entra tenant id
       #        AZURE_SUBSCRIPTION_ID  - the subscription holding the signing account
-      #   4. Repository VARIABLES (same page > Variables):
+      #   5. Repository VARIABLES (same page > Variables):
       #        ARTIFACT_SIGNING_ENDPOINT  - regional endpoint, e.g. https://<region>.codesigning.azure.net/
       #        ARTIFACT_SIGNING_ACCOUNT   - the Artifact Signing account name
       #        ARTIFACT_SIGNING_PROFILE   - the certificate profile name
-      #   5. Change `if: ${{ false }}` on BOTH steps below to `if: ${{ startsWith(github.ref, 'refs/tags/v') }}`
+      #   6. Change `if: ${{ false }}` on BOTH steps below to `if: ${{ startsWith(github.ref, 'refs/tags/v') }}`
       #      and update the README's "Verify your download" note.
       # The job already has `id-token: write`, which OIDC needs.
       - name: Azure login for signing (OIDC) - disabled until configured
