@@ -206,11 +206,37 @@ check('and can be started like any other', code == 200 and r['results'][0]['ok']
 control('/plugins?hostile=0')
 code, r = api('obs/streams/prefs', {'targets': {'main': {'label': '<b>bold</b> & "quotes"', 'type': 'Twitch'}}})
 check('a label with HTML is stored as text', code == 200 and r['saved']['prefs']['main']['Label'] == '<b>bold</b> & "quotes"', (code, r))
-code, r = api('obs/streams/prefs', {'targets': {'main': {'label': 'Main‮evil', 'type': 'Twitch'}}})
+code, r = api('obs/streams/prefs', {'targets': {'main': {'label': 'Main\u202eevil', 'type': 'Twitch'}}})
 check('a label with a bidi override is refused', code == 400, (code, r))
 code, r = api('obs/streams/prefs', {'targets': {'main': {'label': 'ok'}}, 'combos': {'bad name!': ['main']}})
 check('an invalid combination saves nothing', code == 400 and api('obs/streams')[1]['saved']['prefs'].get('main', {}).get('Label') != 'ok', (code, r))
 api('obs/streams/prefs', {'targets': {}, 'combos': {}})
+
+# 7f. an Aitum output that is still connecting is stopped too (round 2)
+control('/reset')
+wait_connected()
+control('/aitummode?m=slow')   # Kick only shows as live 3 s after start_output
+code, r = api('obs/streams/action', {'op': 'start', 'targets': ['main', 'aitum:Kick'], 'confirm': True})
+check('start with a slow Aitum output', code == 200 and all(x['ok'] for x in r['results']), r)
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['main', 'aitum:Kick'], 'confirm': True})
+check('the stop right after it succeeds', code == 200 and all(x['ok'] for x in r['results']), r)
+check('stop_output was sent although Kick still read as off', 'CallVendorRequest:stop_output {"name": "Kick"}' in calls(), calls())
+time.sleep(4)
+st = control('/state')
+check('the connecting Aitum output never went live', not st['aitum']['Kick'] and not st['streaming'], st)
+control('/aitummode?m=ok')
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['aitum:Kick'], 'confirm': True})
+check('stopping an Aitum output that is off reads as already off', code == 200 and r['results'][0]['ok'] and r['results'][0]['message'] == 'Already off', r)
+
+# 7g. names that read differently from what they are
+control('/plugins?bidi=1')
+code, r, t = streams()
+check('an Aitum name with a bidi override is left out', code == 200 and not any(k.startswith('aitum:Kick') and k != 'aitum:Kick' for k in t), list(t))
+control('/plugins?bidi=0')
+code, r = api('obs/streams/prefs', {'targets': {'main' + chr(10): {'label': 'x'}}})
+check('a stream key with a trailing newline is refused', code == 400, (code, r))
+code, r = api('obs/streams/prefs', {'targets': {'main': {'label': 'a' + chr(0x7F) + 'b'}}})
+check('a label with DEL is refused', code == 400, (code, r))
 
 # 8. labels, types and combinations
 code, r = api('obs/streams/prefs', {'targets': {'main': {'label': 'Main', 'type': 'Twitch'}, 'mrtmp:1001': {'label': 'Second', 'type': 'YouTube'}},

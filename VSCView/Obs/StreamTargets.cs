@@ -125,7 +125,16 @@ namespace VSCView.Obs
             !string.IsNullOrEmpty(id) && id.Length <= 64 && id.All(c => (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_');
 
         internal static bool IsSafeAitumName(string name) =>
-            !string.IsNullOrEmpty(name) && name.Length <= 128 && name.All(c => c >= 0x20);
+            !string.IsNullOrEmpty(name) && name.Length <= 128 && IsPlainText(name);
+
+        /// <summary>
+        /// Text shown to the user as a name: no C0 or C1 control characters, no DEL, and no bidirectional-text controls,
+        /// which can make a name read differently from what it is (e.g. in the go-live confirm).
+        /// </summary>
+        internal static bool IsPlainText(string s) => s.All(c => c >= 0x20 && !(c >= 0x7F && c <= 0x9F) && !IsBidiControl(c));
+
+        internal static bool IsBidiControl(char c) =>
+            (c >= '\u202A' && c <= '\u202E') || (c >= '\u2066' && c <= '\u2069') || c == '\u200E' || c == '\u200F' || c == '\u061C';
 
         public const string SkippedNotLive = "Skipped: OBS's own stream isn't live, so nothing else was started";
 
@@ -194,7 +203,9 @@ namespace VSCView.Obs
 
         private static StreamResult RunPlugin(ObsClient obs, StreamTarget t, bool start)
         {
-            if (t.Active == start) return new StreamResult { Key = t.Key, Ok = true, Message = start ? "Already live" : "Already off" };
+            // Start skips what is already live. Stop is always sent: an output that is still connecting reads as off, and a
+            // stop the user confirmed must not be skipped on that.
+            if (start && t.Active == true) return new StreamResult { Key = t.Key, Ok = true, Message = "Already live" };
             try
             {
                 if (t.Kind == "mrtmp")
@@ -219,6 +230,10 @@ namespace VSCView.Obs
                 }
                 return new StreamResult { Key = t.Key, Ok = false, Message = "Unknown kind of stream" };
             }
+            // Aitum refuses stop_output for an output that isn't running: when OBS's own output list also says it's off,
+            // that is the answer we wanted.
+            catch (ObsRequestException) when (!start && t.Kind == "aitum" && t.Active == false)
+            { return new StreamResult { Key = t.Key, Ok = true, Message = "Already off" }; }
             catch (Exception ex) { return new StreamResult { Key = t.Key, Ok = false, Message = Describe(ex) }; }
         }
 

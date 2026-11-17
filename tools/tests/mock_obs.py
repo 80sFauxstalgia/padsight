@@ -24,6 +24,10 @@ A tiny control port lets a test drive OBS-side changes:
         output whose name is HTML)
   curl "http://127.0.0.1:4466/startmode?m=error"   -> StartStream fails; m=never: accepted but never live;
                                                        m=slow: live 3 s after StartStream; m=ok: at once
+  curl "http://127.0.0.1:4466/aitummode?m=slow"    -> Aitum outputs stay "connecting" (not in the output list) for
+                                                       3 s after start_output; stop_output cancels; stopping an
+                                                       output that isn't running is refused
+       (plugins bidi=1: an Aitum output name with a right-to-left override)
 Standard library only.
 """
 import argparse
@@ -55,8 +59,10 @@ state = {
     'close_replies': 0,  # clients that answered our close frame (a polite close)
     'refused': 0,        # connection attempts while "restarting"
     'down_until': 0.0,
-    'plugins': {'mrtmp': True, 'aitum': True, 'dup': False, 'nonascii': False, 'hostile': False},
+    'plugins': {'mrtmp': True, 'aitum': True, 'dup': False, 'nonascii': False, 'hostile': False, 'bidi': False},
     'start_mode': 'ok',
+    'aitum_mode': 'ok',
+    'aitum_live_at': {},   # Aitum output name -> when a slow start goes live
     'live_at': 0.0,   # slow start: when the stream goes live
     'mrtmp': {'1001': False, '1002': False},              # target id -> running
     'aitum': {'Kick': False, 'YouTube Vertical': False},  # output name -> running
@@ -116,7 +122,16 @@ def stream_event():
                             'outputState': 'OBS_WEBSOCKET_OUTPUT_STARTED' if state['streaming'] else 'OBS_WEBSOCKET_OUTPUT_STOPPED'}, 1 << 6))
 
 
+def promote_aitum():
+    import time
+    for n, t in list(state['aitum_live_at'].items()):
+        if time.time() >= t:
+            del state['aitum_live_at'][n]
+            state['aitum'][n] = True
+
+
 def handle_request(rtype, data):
+    promote_aitum()
     if rtype in STREAM_CALLS and (data or {}).get('requestType') != 'get_outputs':  # log what changes state, not lookups
         d = data or {}
         detail = d.get('hotkeyName') or (d.get('requestType', '') + ' ' + json.dumps(d.get('requestData', {}))).strip()
@@ -184,7 +199,18 @@ def handle_request(rtype, data):
             n = rd.get('name')
             if n not in state['aitum']:
                 return False, (702, 'output not found')
-            state['aitum'][n] = rt == 'start_output'
+            if rt == 'stop_output':
+                if n in state['aitum_live_at']:
+                    del state['aitum_live_at'][n]      # still connecting: stopping cancels it
+                elif state['aitum'][n]:
+                    state['aitum'][n] = False
+                else:
+                    return False, (702, 'output is not running')
+            elif state['aitum_mode'] == 'slow':
+                import time
+                state['aitum_live_at'][n] = time.time() + 3
+            else:
+                state['aitum'][n] = True
             state['events'].append(('VendorEvent', {'vendorName': 'aitum-multistream',
                                     'eventType': 'output_started' if rt == 'start_output' else 'output_stopped',
                                     'eventData': {'name': 'aitum_multi_output_' + n}}, 1 << 9))
@@ -336,14 +362,21 @@ async def control_handler(reader, writer):
         state.clear()
         state.update(copy.deepcopy(INITIAL))
     elif u.path == '/plugins':
-        for k in ('mrtmp', 'aitum', 'dup', 'nonascii', 'hostile'):
+        for k in ('mrtmp', 'aitum', 'dup', 'nonascii', 'hostile', 'bidi'):
             if k in q:
                 state['plugins'][k] = q[k] == '1'
         hostile = '<img src=x onerror=alert(1)>'
+        bidi = 'Kick' + chr(0x202E) + 'evil'
+        if state['plugins'].get('bidi'):
+            state['aitum'].setdefault(bidi, False)
+        else:
+            state['aitum'].pop(bidi, None)
         if state['plugins']['hostile']:
             state['aitum'].setdefault(hostile, False)
         else:
             state['aitum'].pop(hostile, None)
+    elif u.path == '/aitummode':
+        state['aitum_mode'] = q.get('m', 'ok')
     elif u.path == '/startmode':
         state['start_mode'] = q.get('m', 'ok')
     elif u.path == '/scene':
@@ -356,6 +389,7 @@ async def control_handler(reader, writer):
         state['recording'] = q.get('on') == '1'
         await broadcast_event('RecordStateChanged', {'outputActive': state['recording'], 'outputState': 'x'}, 1 << 6)
     elif u.path == '/state':
+        promote_aitum()
         body = {'scene': state['scene'], 'streaming': state['streaming'], 'inputs': {k: v[1] for k, v in state['inputs'].items()},
                 'scene_items': state['scene_items'], 'auth_attempts': state['auth_attempts'],
                 'close_replies': state['close_replies'], 'refused': state['refused'],

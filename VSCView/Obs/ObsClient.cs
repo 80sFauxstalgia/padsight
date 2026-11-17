@@ -261,7 +261,16 @@ namespace VSCView.Obs
             pending[id] = tcs;
             var d = new JObject { ["requestType"] = type, ["requestId"] = id };
             if (data != null) d["requestData"] = data;
-            await SendAsync(ws, new JObject { ["op"] = 6, ["d"] = d }, CancellationToken.None).ConfigureAwait(false);
+            // The send is bounded too: a stalled socket must not hold a caller (and any lock it holds) forever.
+            using (var sendTimeout = new CancellationTokenSource(timeoutMs))
+            {
+                try { await SendAsync(ws, new JObject { ["op"] = 6, ["d"] = d }, sendTimeout.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException)
+                {
+                    pending.TryRemove(id, out _);
+                    throw new TimeoutException($"OBS didn't take {type} in time");
+                }
+            }
             var done = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs)).ConfigureAwait(false);
             if (done != tcs.Task)
             {

@@ -286,11 +286,9 @@ namespace VSCView
         }
 
         #region Stream control
-        private static readonly Regex StreamKeyRx = new Regex(@"^(main|mrtmp:[A-Za-z0-9_\-]{1,64}|aitum:[^\x00-\x1F]{1,128})$");
-        private static readonly Regex ComboNameRx = new Regex(@"^[\p{L}\p{N} _\-]{1,32}$");
-        private static readonly Regex StreamTypeRx = new Regex(@"^[\p{L}\p{N} _\-\.]{1,24}$");
-        // Bidirectional-text controls can make a name read differently from what it is (e.g. in the go-live confirm).
-        private static bool HasBidiControl(string s) => s.Any(c => (c >= '‪' && c <= '‮') || (c >= '⁦' && c <= '⁩') || c == '‎' || c == '‏' || c == '؜');
+        private static readonly Regex StreamKeyRx = new Regex(@"^(main|mrtmp:[A-Za-z0-9_\-]{1,64}|aitum:[^\x00-\x1F\x7F-\x9F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]{1,128})\z");
+        private static readonly Regex ComboNameRx = new Regex(@"^[\p{L}\p{N} _\-]{1,32}\z");
+        private static readonly Regex StreamTypeRx = new Regex(@"^[\p{L}\p{N} _\-\.]{1,24}\z");
         // One start or stop at a time: a Stop sent while a Start waits for OBS must see the real state afterwards,
         // not "everything off" followed by the Start bringing everything live.
         private static readonly System.Threading.SemaphoreSlim streamOpLock = new System.Threading.SemaphoreSlim(1, 1);
@@ -361,7 +359,7 @@ namespace VSCView
                 {
                     if (!StreamKeyRx.IsMatch(p.Name)) return ApiResponse.Error(400, "Unknown stream key");
                     string label = ((string)p.Value?["label"] ?? "").Trim(), type = ((string)p.Value?["type"] ?? "").Trim();
-                    if (label.Length > 40 || label.Any(char.IsControl) || HasBidiControl(label)) return ApiResponse.Error(400, "Keep stream names to 40 plain characters");
+                    if (label.Length > 40 || !StreamTargets.IsPlainText(label)) return ApiResponse.Error(400, "Keep stream names to 40 plain characters");
                     if (type.Length > 0 && !StreamTypeRx.IsMatch(type)) return ApiResponse.Error(400, "Use a short word for the type, e.g. Twitch");
                     if (label.Length > 0 || type.Length > 0) map[p.Name] = new StreamPref { Label = label.Length > 0 ? label : null, Type = type.Length > 0 ? type : null };
                 }
