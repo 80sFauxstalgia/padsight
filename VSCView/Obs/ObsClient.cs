@@ -20,8 +20,9 @@ namespace VSCView.Obs
     /// </summary>
     public sealed class ObsClient : IDisposable
     {
-        // Event subscription bits (obs-websocket protocol): Scenes = 1 << 2, Outputs = 1 << 6.
-        private const int EventSubscriptions = (1 << 2) | (1 << 6);
+        // Event subscription bits (obs-websocket protocol): Scenes = 1 << 2, Outputs = 1 << 6, Vendors = 1 << 9
+        // (plugin events, e.g. Aitum Multistream's output_started / output_stopped).
+        private const int EventSubscriptions = (1 << 2) | (1 << 6) | (1 << 9);
 
         public enum ObsStatus { Off, Connecting, Connected, WrongPassword, Unreachable }
 
@@ -46,6 +47,10 @@ namespace VSCView.Obs
         public event Action<bool, bool> OutputsChanged;
         /// <summary>Connected, disconnected, or the password was refused.</summary>
         public event Action StatusChanged;
+        /// <summary>A stream output may have started or stopped (main stream, or a plugin's vendor event).</summary>
+        public event Action StreamsChanged;
+        /// <summary>Counts StreamsChanged notifications, so the panel can tell its stream list is stale.</summary>
+        public int StreamsVersion { get; private set; }
 
         public bool Streaming { get; private set; }
         public bool Recording { get; private set; }
@@ -231,6 +236,13 @@ namespace VSCView.Obs
                 case "StreamStateChanged":
                     Streaming = (bool?)data?["outputActive"] ?? false;
                     OutputsChanged?.Invoke(Streaming, Recording);
+                    StreamsVersion++;
+                    StreamsChanged?.Invoke();
+                    break;
+                case "VendorEvent":
+                    if ((string)data?["vendorName"] != StreamTargets.AitumVendor) break;
+                    StreamsVersion++;
+                    StreamsChanged?.Invoke();
                     break;
                 case "RecordStateChanged":
                     Recording = (bool?)data?["outputActive"] ?? false;
@@ -249,7 +261,16 @@ namespace VSCView.Obs
             pending[id] = tcs;
             var d = new JObject { ["requestType"] = type, ["requestId"] = id };
             if (data != null) d["requestData"] = data;
-            await SendAsync(ws, new JObject { ["op"] = 6, ["d"] = d }, CancellationToken.None).ConfigureAwait(false);
+            // The send is bounded too: a stalled socket must not hold a caller (and any lock it holds) forever.
+            using (var sendTimeout = new CancellationTokenSource(timeoutMs))
+            {
+                try { await SendAsync(ws, new JObject { ["op"] = 6, ["d"] = d }, sendTimeout.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException)
+                {
+                    pending.TryRemove(id, out _);
+                    throw new TimeoutException($"OBS didn't take {type} in time");
+                }
+            }
             var done = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs)).ConfigureAwait(false);
             if (done != tcs.Task)
             {

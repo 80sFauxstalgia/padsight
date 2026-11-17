@@ -414,6 +414,18 @@
             <div id="obsSources" class="grid"></div>
           </section>
         </div>
+        <section class="card hud" aria-label="Streams" id="obsStreams">
+          <div class="row spread"><h2 class="label" tabindex="-1">Streams</h2><button class="btn small" type="button" data-act="streams-refresh">Refresh</button></div>
+          <p class="sub">Start and stop OBS's own stream and your multistream targets (obs-multi-rtmp, Aitum Multistream). Name each one and give it a type to start or stop a whole type at once. Every start and stop asks you first.</p>
+          <div class="row" id="streamBulk"></div>
+          <p class="small" id="streamBusy" role="status" aria-live="polite"></p>
+          <p class="small warn-text" id="streamNotice" role="status" aria-live="polite"></p>
+          <p class="small" id="streamSummary"></p>
+          <div id="streamList" class="grid"><p class="small">Looking for streams…</p></div>
+          <div class="row"><input type="text" id="comboName" maxlength="32" placeholder="Name for the ticked streams, e.g. Weekend" aria-label="Combination name">
+            <button class="btn small" type="button" data-act="combo-save">Save ticked as a combination</button></div>
+          <p class="small" id="streamNote"></p>
+        </section>
         <section class="card" aria-label="Scene rules">
           <div class="row spread"><h2 class="label">Scene rules</h2><span class="small">Saved as you change them.</span></div>
           <p class="sub">A theme per scene changes sources that follow the app (not ones pinned to a theme). Hidden scenes fade every PadSight source out.</p>
@@ -469,6 +481,259 @@
     // Scenes and sources rarely change: refresh every 30 s while this page is open (and on Refresh / after changes).
     if (linked && (!obsScenes || Date.now() - obsScenesAt > 30000)) loadObsScenes();
     if (linked && obsScenes) renderObsLinked();
+    // Streams: reload when OBS reports a stream change, and every 5 s while this page is open.
+    if (linked && (!streams || o.streamsVersion !== streamsVersion || Date.now() - streamsAt > 5000)) loadStreams();
+    else if (linked && streams) renderStreams(); // redraws after the page was rebuilt (lastSig cleared)
+  }
+
+  // ---------------------------------------------------------------- stream control
+  let streams = null;          // {targets, multiRtmp, multiRtmpActive, aitum, version, saved:{prefs, combos}}
+  let streamsAt = 0, streamsVersion = -1, streamsLoading = false;
+  let streamsError = null;     // set when the last refresh failed: every state shown is then unknown
+  let busyStart = null, stopsRunning = 0; // a start / the stops in flight; only Start buttons are disabled
+  let streamNotice = null, noticeTimer = null; // the last action's warnings and failures, kept on screen ~20 s
+  const STREAM_TYPES = ['Twitch', 'YouTube', 'Kick', 'Other'];
+
+  async function loadStreams(force) {
+    if (streamsLoading) return;
+    streamsLoading = true;
+    try {
+      streams = await api('obs/streams');
+      streamsAt = Date.now(); streamsVersion = streams.version; streamsError = null;
+    } catch (e) {
+      streamsAt = Date.now();
+      streamsError = 'Can’t reach OBS. Check that OBS is open and linked, then Refresh.';
+    } finally { streamsLoading = false; }
+    if (!streams) {
+      if ($('#streamList')) $('#streamList').innerHTML = `<p class="small warn-text">${esc(streamsError || 'Looking for streams…')}</p>`;
+      return;
+    }
+    renderStreams(force);
+  }
+
+  const streamPref = key => (streams?.saved?.prefs || {})[key] || {};
+  function streamLabel(t) {
+    const p = streamPref(t.key);
+    if (p.Label) return p.Label;
+    if (t.kind === 'main') return 'OBS stream';
+    if (t.kind === 'mrtmp') return `obs-multi-rtmp target ${t.name} (not named yet)`;
+    return t.name;
+  }
+  const streamNames = keys => keys.map(k => { const t = streams.targets.find(x => x.key === k); return t ? streamLabel(t) : k; });
+
+  const KIND_LABEL = { main: 'OBS', mrtmp: 'obs-multi-rtmp', aitum: 'Aitum' };
+  function rowStatus(t) {
+    if (streamsError) return '<span class="tag unknown" title="OBS can’t be reached right now">UNKNOWN</span>';
+    if (t.active === true) return '<span class="tag ok">LIVE</span>';
+    if (t.active === false) return '<span class="tag off">OFF</span>';
+    const why = t.kind === 'mrtmp' ? 'obs-multi-rtmp doesn’t report each target’s state'
+      : t.kind === 'aitum' ? 'OBS’s output list didn’t answer, so this output’s state is unknown'
+      : 'OBS didn’t answer, so the state is unknown';
+    return `<span class="tag unknown" title="${why}">STATE UNKNOWN</span>`;
+  }
+
+  // Only the parts that change with OBS's state: used while the user types in a name field, so typing is never lost.
+  function updateStreamsInPlace() {
+    for (const row of $$('#streamList [data-skey]')) {
+      const t = streams.targets.find(x => x.key === row.dataset.skey);
+      if (!t) continue;
+      $('[data-sstatus]', row).innerHTML = rowStatus(t);
+      $('[data-op="start"]', row).disabled = startLocked() || (t.active === true && !streamsError);
+    }
+    for (const b of $$('#streamBulk [data-op="start"]')) b.disabled = startLocked();
+    updateStreamLines();
+  }
+
+  // Sets text only when it changed, so screen readers don't re-announce the same line on every poll.
+  function setText(el, text) { if (el && el.textContent !== text) el.textContent = text; }
+  function updateStreamLines() {
+    const m = streams ? streams.targets.filter(x => x.kind === 'mrtmp').length : 0;
+    let summary = '';
+    if (streamsError) summary = streamsError;
+    else if (streams && streams.obsSlow) summary = 'OBS is slow to answer, so some states are unknown. Refresh in a moment.';
+    else if (streams && !streams.outputListOk) summary = 'OBS’s output list didn’t answer, so live states are unknown. Refresh in a moment.';
+    else if (m) summary = `obs-multi-rtmp: ${streams.multiRtmpActive} of ${m} targets live (it doesn’t report which).`;
+    setText($('#streamSummary'), summary);
+    const cls = 'small' + (streamsError || streams?.obsSlow || (streams && !streams.outputListOk) ? ' warn-text' : '');
+    if ($('#streamSummary').className !== cls) $('#streamSummary').className = cls;
+    setText($('#streamBusy'), [busyStart, busyStopText()].filter(Boolean).join(' · '));
+    setText($('#streamNotice'), streamNotice || '');
+  }
+  const startLocked = () => !!(busyStart || stopsRunning);
+  const busyStopText = () => !stopsRunning ? null
+    : (busyStart ? 'Stopping, right after the start that’s running…' : stopsRunning > 1 ? `Stopping (${stopsRunning} requests)…` : 'Stopping…');
+
+  function renderStreams(force) {
+    if (!$('#streamList') || !streams) return;
+    const sig = JSON.stringify([streams, streamsError, busyStart, stopsRunning]);
+    if (!force && sig === lastSig.streams) return;
+    const typing = document.activeElement && $('#streamList').contains(document.activeElement) && document.activeElement.type === 'text';
+    if (typing && !force) { updateStreamsInPlace(); return; }
+    lastSig.streams = sig;
+    const ticked = new Set($$('#streamList [data-ssel]:checked').map(x => x.dataset.ssel));
+    const kind = { main: 'OBS', mrtmp: 'MULTI-RTMP', aitum: 'AITUM' };
+    const busy = startLocked() ? 'disabled' : '';
+    $('#streamList').innerHTML = streams.targets.map(t => {
+      const p = streamPref(t.key), type = p.Type || '', name = esc(streamLabel(t));
+      const types = [...new Set([...STREAM_TYPES, ...(type ? [type] : [])])];
+      return `<div class="row spread stream-row" data-skey="${esc(t.key)}">
+        <label class="row"><input type="checkbox" data-ssel="${esc(t.key)}" ${ticked.has(t.key) ? 'checked' : ''} aria-label="Tick ${name}">
+          <span class="tag">${kind[t.kind] || ''}</span><span data-sstatus>${rowStatus(t)}</span>${t.note ? ` <span class="tag">${esc(t.note.toUpperCase())}</span>` : ''}</label>
+        <div class="row">
+          <input type="text" data-sfield="label" maxlength="40" value="${esc(p.Label || '')}" placeholder="${name}" aria-label="Name for ${name}">
+          <select data-sfield="type" aria-label="Type for ${name}"><option value="">No type</option>${types.map(x => `<option ${x === type ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+          <button class="btn small" type="button" data-act="stream-one" data-op="start" data-key="${esc(t.key)}" aria-label="Start ${name}" ${busy || (t.active === true && !streamsError ? 'disabled' : '')}>Start</button>
+          <button class="btn small" type="button" data-act="stream-one" data-op="stop" data-key="${esc(t.key)}" aria-label="Stop ${name}">Stop</button>
+        </div></div>`;
+    }).join('') || '<p class="small">No streams found.</p>';
+
+    const types = [...new Set(streams.targets.map(t => streamPref(t.key).Type).filter(Boolean))].sort();
+    const combos = Object.entries(streams.saved?.combos || {});
+    const bulk = (op, scope, text, primary) =>
+      `<button class="btn small${primary ? ' primary' : ''}" type="button" data-act="stream-bulk" data-op="${op}" data-scope="${esc(scope)}" ${op === 'start' ? busy : ''}>${esc(text)}</button>`;
+    $('#streamBulk').innerHTML = bulk('start', 'all', 'Start all', true) + bulk('stop', 'all', 'Stop all')
+      + types.map(x => bulk('start', 'type:' + x, 'Start ' + x) + bulk('stop', 'type:' + x, 'Stop ' + x)).join('')
+      + combos.map(([n]) => `<span class="row">${bulk('start', 'combo:' + n, 'Start ' + n)}${bulk('stop', 'combo:' + n, 'Stop ' + n)}
+        <button class="btn small" type="button" data-act="combo-del" data-name="${esc(n)}" aria-label="Delete the combination ${esc(n)}" ${busy}>×</button></span>`).join('');
+
+    const notes = [];
+    if (!streams.multiRtmp && !streams.aitum) notes.push('Only OBS’s own stream was found. Install obs-multi-rtmp (0.7.4.5 or newer) or Aitum Multistream to control extra streams.');
+    if (streams.multiRtmp) notes.push('obs-multi-rtmp doesn’t report each target’s state, and it skips targets that are switched off in its dock.');
+    notes.push('Start: OBS’s own stream first, then the others. If OBS’s stream doesn’t go live, nothing else starts.');
+    notes.push('Stop: the others first, then OBS’s own stream.');
+    notes.push('OBS may ask you to confirm a stop itself (stream delay, Aitum’s warning).');
+    setText($('#streamNote'), notes.join('\n'));
+    updateStreamLines();
+  }
+
+  function scopeKeys(op, scope) {
+    let list = streams.targets;
+    if (scope.startsWith('type:')) list = list.filter(t => streamPref(t.key).Type === scope.slice(5));
+    else if (scope.startsWith('combo:')) {
+      const keys = (streams.saved.combos || {})[scope.slice(6)] || [];
+      list = list.filter(t => keys.includes(t.key));
+    }
+    // A stop sends every stream in scope (the app re-checks OBS and skips what is really off); a start skips what
+    // already shows as live.
+    return (op === 'stop' ? list : list.filter(t => t.active !== true)).map(t => t.key);
+  }
+
+  // In-page confirm dialog for the whole panel (window.confirm may be suppressed inside an OBS dock).
+  // Resolves true only on the OK button; Cancel, Escape and a click outside resolve false. Tab stays inside the dialog,
+  // and focus goes back to the control that opened it (found again after a redraw), else the Streams heading.
+  let confirmResolve = null, confirmOpenedAt = 0, confirmReturn = null;
+  function focusSelector(el) {
+    const d = el && el.dataset;
+    if (!d || !d.act) return el && el.id ? '#' + CSS.escape(el.id) : null;
+    let sel = `[data-act="${CSS.escape(d.act)}"]`;
+    for (const k of ['key', 'op', 'scope', 'name']) if (d[k] !== undefined) sel += `[data-${k}="${CSS.escape(d[k])}"]`;
+    return sel;
+  }
+  // Back to the control that opened the dialog when it still exists and is enabled. A stream dialog otherwise falls back
+  // to the Streams heading (a Start button is disabled while its start runs); other dialogs leave focus alone.
+  function restoreFocus(onlyIfLost) {
+    if (!confirmReturn || confirmResolve) return;
+    if (onlyIfLost && document.activeElement && document.activeElement !== document.body) return;
+    const el = confirmReturn.sel && $(confirmReturn.sel);
+    if (el && !el.disabled) { el.focus(); return; }
+    if (confirmReturn.stream) { const h = $('#obsStreams h2'); if (h) h.focus(); }
+  }
+  function askConfirm({ title, items, note, okText, danger }) {
+    let back = $('#confirmModal');
+    if (!back) {
+      back = document.createElement('div');
+      back.id = 'confirmModal'; back.className = 'modal-back'; back.hidden = true;
+      back.innerHTML = '<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmList confirmNote"></div>';
+      back.addEventListener('click', e => { if (e.target === back) closeConfirm(false); });
+      document.body.appendChild(back);
+    }
+    if (confirmResolve) closeConfirm(false);
+    const opener = document.activeElement;
+    confirmReturn = { sel: focusSelector(opener), stream: !!(opener && opener.closest && opener.closest('#obsStreams')) };
+    $('.modal', back).innerHTML = `<p id="confirmTitle"><b>${esc(title)}</b></p>
+      ${items && items.length ? `<ul id="confirmList">${items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      ${note ? `<p class="small" id="confirmNote">${esc(note)}</p>` : ''}
+      <div class="row"><button class="btn" type="button" data-act="confirm-no">Cancel</button>
+      <button class="btn ${danger ? 'danger' : 'primary'}" type="button" data-act="confirm-yes" aria-disabled="true">${esc(okText)}</button></div>`;
+    back.hidden = false;
+    confirmOpenedAt = Date.now();
+    // A double tap can't confirm: the OK button is inert, and shows it, for the first 300 ms.
+    setTimeout(() => { const y = $('[data-act="confirm-yes"]', back); if (y) y.removeAttribute('aria-disabled'); }, 300);
+    $('[data-act="confirm-no"]', back).focus();
+    return new Promise(res => { confirmResolve = res; });
+  }
+  function closeConfirm(answer) {
+    const back = $('#confirmModal');
+    if (back) { back.hidden = true; $('.modal', back).innerHTML = ''; }
+    const r = confirmResolve; confirmResolve = null;
+    if (r) r(answer);
+    setTimeout(() => restoreFocus(false), 0);
+  }
+  document.addEventListener('keydown', e => {
+    if (!confirmResolve) return;
+    if (e.key === 'Escape') { closeConfirm(false); return; }
+    if (e.key === 'Tab') {
+      const f = $$('#confirmModal button');
+      if (!f.length) return;
+      e.preventDefault();
+      const i = f.indexOf(document.activeElement);
+      f[i < 0 ? 0 : (i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus();
+    }
+  });
+
+  function setNotice(text) {
+    streamNotice = text || null;
+    clearTimeout(noticeTimer);
+    if (text) noticeTimer = setTimeout(() => { streamNotice = null; if ($('#streamNotice')) updateStreamLines(); }, 21000);
+    if ($('#streamNotice')) updateStreamLines();
+  }
+
+  async function streamAction(op, keys) {
+    if (op === 'start' && startLocked()) return;   // a Stop is always allowed; the app runs it after any start
+    if (!keys.length) { toast(op === 'start' ? 'Those streams are already live' : 'No streams to stop'); return; }
+    // Each item names its kind, so an Aitum output called "OBS stream" can't pass for OBS's own stream.
+    const items = keys.map(k => {
+      const t = streams.targets.find(x => x.key === k);
+      return !t ? k : t.kind === 'main' ? streamLabel(t) : `${streamLabel(t)} (${KIND_LABEL[t.kind]})`;
+    });
+    const ok = await askConfirm(op === 'start'
+      ? { title: 'Start these streams?', items, note: 'This puts these streams live.', okText: 'Start now' }
+      : { title: 'Stop these streams?', items, note: 'This ends those broadcasts. Streams already off are skipped.', okText: 'Stop now', danger: true });
+    if (!ok) return;
+    const main = streams.targets.find(t => t.key === 'main');
+    if (op === 'start') busyStart = keys.includes('main') && main?.active !== true ? 'Starting OBS stream, up to 15 s…' : 'Starting…';
+    else stopsRunning++;
+    setNotice(null);
+    renderStreams(true);
+    try {
+      const r = await api('obs/streams/action', { op, targets: keys, confirm: true });
+      const bad = r.results.filter(x => !x.ok);
+      toast(bad.length ? `${bad.length} didn’t ${op}` : r.results.map(x => `${streamNames([x.key])[0]}: ${x.message}`).join(' · '));
+      // Failures and warnings ("OBS may still go live…") stay on screen while the list re-checks OBS.
+      const keep = r.results.filter(x => !x.ok || x.notice);
+      if (keep.length) setNotice(keep.map(x => `${streamNames([x.key])[0]}: ${x.message}`).join(' · '));
+    } catch (e) {
+      toast(e.message);
+      setNotice(`${op === 'start' ? 'Start' : 'Stop'} failed: ${e.message}`);
+    } finally {
+      if (op === 'start') busyStart = null; else stopsRunning--;
+      renderStreams();   // not forced: a name typed meanwhile survives (the in-place update refreshes buttons)
+      restoreFocus(true); // the redraw replaced the focused button: find it again
+    }
+    // OBS and the plugins settle over the next seconds (and a slow OBS stream may still go live): re-check for ~20 s.
+    // Not forced, so a name being typed is never wiped; the list redraws when the state changes.
+    for (const ms of [800, 3000, 6000, 10000, 15000, 20000]) setTimeout(() => loadStreams(), ms);
+  }
+
+  async function saveStreamPrefs(combos) {
+    const targets = Object.assign({}, streams?.saved?.prefs || {});
+    for (const row of $$('#streamList [data-skey]')) {
+      targets[row.dataset.skey] = { label: $('[data-sfield="label"]', row).value.trim(), type: $('[data-sfield="type"]', row).value };
+    }
+    const body = { targets: Object.fromEntries(Object.entries(targets).map(([k, v]) => [k, { label: v.label ?? v.Label ?? '', type: v.type ?? v.Type ?? '' }])) };
+    if (combos) body.combos = combos;
+    try { const r = await api('obs/streams/prefs', body); streams.saved = r.saved; renderStreams(true); toast('Saved'); }
+    catch (e) { toast(e.message); }
   }
 
   let obsLoading = false;
@@ -827,7 +1092,7 @@
     },
     'obs-disconnect': async () => { try { const r = await api('obs/connect', { enabled: false }); state.obs = r.obs; render(); } catch (e) { toast(e.message); } },
     'obs-forget': async () => {
-      if (!confirm('Forget the saved OBS password?')) return;
+      if (!await askConfirm({ title: 'Forget the saved OBS password?', note: 'You can enter it again any time.', okText: 'Forget it', danger: true })) return;
       try { const r = await api('obs/connect', { forgetPassword: true, enabled: false }); state.obs = r.obs; render(); toast('Password removed'); } catch (e) { toast(e.message); }
     },
     'obs-refresh': () => loadObsScenes(),
@@ -837,7 +1102,7 @@
       const h = opts.crop && opts.ch > 0 ? Math.round(opts.ch) : t?.height;
       const scene = $('#obsAddScene').value, name = $('#obsAddName').value.trim();
       if (!w || !h) { toast('Pick a theme first, so the size is known'); return; }
-      if (!confirm(`Add "${name}" (${w}×${h}) to the OBS scene "${scene}"?`)) return;
+      if (!await askConfirm({ title: `Add "${name}" (${w}×${h}) to the OBS scene "${scene}"?`, okText: 'Add to OBS' })) return;
       try { await api('obs/add-source', { scene, name, url: builtUrl(false), width: w, height: h }); toast(`Added to "${scene}". Move and scale it in OBS.`); loadObsScenes(); }
       catch (e) { toast(e.message); }
     },
@@ -845,12 +1110,31 @@
       try { const r = await api('obs/fix-port', { name: b.dataset.name }); toast('Updated: ' + r.url); loadObsScenes(); }
       catch (e) { toast(e.message); }
     },
+    'streams-refresh': () => loadStreams(true),
+    'stream-one': b => streamAction(b.dataset.op, scopeKeys(b.dataset.op, 'all').filter(k => k === b.dataset.key)),
+    'stream-bulk': b => streamAction(b.dataset.op, scopeKeys(b.dataset.op, b.dataset.scope)),
+    'combo-save': async () => {
+      const name = $('#comboName').value.trim();
+      const keys = $$('#streamList [data-ssel]:checked').map(x => x.dataset.ssel);
+      if (!name) { toast('Give the combination a name'); return; }
+      if (!keys.length) { toast('Tick the streams that belong in it'); return; }
+      await saveStreamPrefs(Object.assign({}, streams.saved.combos || {}, { [name]: keys }));
+      $('#comboName').value = '';
+    },
+    'confirm-yes': b => { if (Date.now() - confirmOpenedAt >= 300 && !b.hasAttribute('aria-disabled')) closeConfirm(true); },  // a double tap can't confirm
+    'confirm-no': () => closeConfirm(false),
+    'combo-del': async b => {
+      if (!await askConfirm({ title: `Delete the combination "${b.dataset.name}"?`, items: [], note: 'The streams themselves stay as they are.', okText: 'Delete' })) return;
+      const combos = Object.assign({}, streams.saved.combos || {});
+      delete combos[b.dataset.name];
+      await saveStreamPrefs(combos);
+    },
     'toggle-hidden': async () => {
       try { const r = await api('visibility', { hidden: !state.obs.manualHidden }); state.obs = r.obs; updateObsLink(); toast(r.obs.manualHidden ? 'Overlay hidden in OBS' : 'Overlay showing again'); }
       catch (e) { toast(e.message); }
     },
     'rotate-key': async () => {
-      if (!confirm('Reset the panel key? Any OBS dock using the old URL stops working until you paste the new one.')) return;
+      if (!await askConfirm({ title: 'Reset the panel key?', note: 'Any OBS dock using the old URL stops working until you paste the new one.', okText: 'Reset key', danger: true })) return;
       try {
         const r = await api('rotate-key', {});
         KEY = r.key;
@@ -887,6 +1171,7 @@
       try { state = await api('settings', { [el.dataset.set]: v }); toast('Saved'); }
       catch (err) { toast(err.message); }
     } else if (el.dataset.rule || el.id === 'obsOnlyLive') saveObsRules();
+    else if (el.dataset.sfield) saveStreamPrefs();
     else if (el.dataset.opt) setOpt(el.dataset.opt, el.value);
     else if (el.dataset.actChange === 'family') { themeFilter = el.value || 'mine'; store.set('themeFilter', themeFilter); renderThemeGrid(); }
   });

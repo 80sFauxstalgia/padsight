@@ -48,5 +48,16 @@ namespace VSCView
         public bool? ObsOnlyWhenLive { get; set; }
         public string HotkeyToggle { get; set; }      // e.g. "Ctrl+Alt+F9": hide/show the overlay
         public string HotkeyNext { get; set; }        // next controller
+
+        // Stream control (panel "Streams" card): the user's label and type per stream target, and saved combinations.
+        // Keys: "main", "mrtmp:<obs-multi-rtmp target id>", "aitum:<Aitum Multistream output name>".
+        public Dictionary<string, StreamPref> StreamPrefs { get; set; }
+        public Dictionary<string, List<string>> StreamCombos { get; set; } // combo name -> target keys
+    }
+
+    public class StreamPref
+    {
+        public string Label { get; set; }
+        public string Type { get; set; } // e.g. "Twitch", "YouTube", "Kick", or the user's own word
     }
 }

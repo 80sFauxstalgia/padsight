@@ -198,6 +198,9 @@ namespace VSCView
                 case "GET /api/obs/scenes": return ApiObsScenes();
                 case "POST /api/obs/add-source": return ApiObsAddSource(Body(req));
                 case "POST /api/obs/fix-port": return ApiObsFixPort(Body(req));
+                case "GET /api/obs/streams": return ApiObsStreams();
+                case "POST /api/obs/streams/action": return ApiObsStreamAction(Body(req));
+                case "POST /api/obs/streams/prefs": return OnUi(() => ApiObsStreamPrefs(Body(req)));
                 default: return ApiResponse.Error(404, "Unknown API " + route);
             }
         }
