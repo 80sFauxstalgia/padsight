@@ -37,9 +37,6 @@ These themes were contributed to [Nielk1/VSCView](https://github.com/Nielk1/VSCV
 | Folder | Author(s) |
 | --- | --- |
 | `steamcontroller/default` (Black, White), `steamcontroller/al2009man` (Diagnostic) | Al. Lopez (AL2009man) |
-| `steamcontroller/ahmemon` (Buh-Lack) | ahMEmon |
-| `steamcontroller/docteurcontroller` | Docteur Controller. Its stick-cap sprite was a shaded render; PadSight ships a flat redraw instead. |
-| `steamcontroller/greyminimal` | CriticalComposer. Its stick-cap sprite was a shaded render; PadSight ships a flat redraw instead. It also uses seven flat sprites (button glows, gyro shading) by Nielk1 that upstream keeps in the Classic theme, copied into this folder. |
 | `steamcontroller/ishmobile` (Line Art) | Ishmobile |
 | `steamcontroller/sorafirestorm` (Line Art Invert) | Sora Firestorm and Ishmobile |
 | `steamcontroller/rambletan` (Black Stencil, Outline 2018, Outline 2019) | RambleTan; the gyro shading sprites are by Nielk1 |
@@ -56,6 +53,7 @@ These themes were contributed to [Nielk1/VSCView](https://github.com/Nielk1/VSCV
 ### Upstream themes not included
 These VSCView themes aren't shipped, because they're built on manufacturer product photos or press renders, or on game artwork:
 - **Built on Valve's Steam Controller press render:** `steamcontroller/classic`, `glass` (Devieus Glass), `ahmemon/ah_nom_inal` (ahNOMinal 2), `white cerberus` (8BitCerberus), `nielk1/firesale`.
+- **Stencils drawn to the outline of that render:** `ahmemon/buh-lack` (Buh-Lack), `docteurcontroller`, `greyminimal`. They're left out so the release carries no doubt about Valve's render.
 - **Built on a product photo:** `steamcontrollerchell/default`.
 - **Photo of unknown origin:** `nielk1/cat paws`.
 - **Game artwork or branding:** `general/genshin_impact`, plus `dualshock4/al2009man/dmc5` and `xboxwirelesscontroller/al2009man/dmc5` (Devil May Cry 5).

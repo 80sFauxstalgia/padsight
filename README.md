@@ -183,9 +183,6 @@ Our own themes are marked *(this fork)*. Every other theme comes from VSCView an
     - Color: Black
     - Color: White
   * Diagnostic by [Al. Lopez (AL2009man)](https://github.com/AL2009man)
-  * Buh-Lack by [ahMEmon](https://www.twitch.tv/ahmemon)
-  * Docteur Controller by [Docteur Controller](https://www.youtube.com/channel/UC1GoAgop-6tbftsU4qtpSOQ)
-  * Grey Minimal by [CriticalComposer](https://www.youtube.com/c/criticalcomposer)
   * Line Art by [Ishmobile](https://www.youtube.com/channel/UCTAPOuAcWv9JGdiQsVVSxkQ)
   * Line Art Invert by Sora Firestorm & [Ishmobile](https://www.youtube.com/channel/UCTAPOuAcWv9JGdiQsVVSxkQ)
   * Black Stencil, Outline 2018 and Outline 2019 by [RambleTan](https://www.youtube.com/c/RambleTan)
@@ -220,7 +217,7 @@ Our own themes are marked *(this fork)*. Every other theme comes from VSCView an
 
 ### Upstream themes not bundled
 These VSCView themes aren't shipped with PadSight because they're built on manufacturer product photos or renders, or on game artwork, which we can't redistribute. They're still in [Nielk1/VSCView](https://github.com/Nielk1/VSCView), and PadSight loads them if you copy them into its `themes` folder yourself.
-* Steam Controller: Classic, Devieus Glass, ahNOMinal 2, White Cerberus, Fire Sale and Cat Paws
+* Steam Controller: Classic, Devieus Glass, ahNOMinal 2, Buh-Lack, Docteur Controller, Grey Minimal, White Cerberus, Fire Sale and Cat Paws
 * Steam Controller Chell: Default (so PadSight has no built-in theme for the Chell prototype)
 * DualShock 4 and Xbox Wireless Controller: Devil May Cry 5
 * Xbox 360 Controller: Wikimedia (adapted from a CC BY-SA 3.0 Wikimedia Commons image)
