@@ -24,6 +24,7 @@ A tiny control port lets a test drive OBS-side changes:
         output whose name is HTML)
   curl "http://127.0.0.1:4466/outputlist?fail=1"   -> GetOutputList fails
   curl "http://127.0.0.1:4466/scenefail?on=1"      -> GetSceneList fails with a hostile error comment
+  curl "http://127.0.0.1:4466/hello?version=x"     -> the obsWebSocketVersion sent to clients that connect next
   curl "http://127.0.0.1:4466/hang?type=A,B"       -> requests of these types never get an answer (/hang clears)
   curl "http://127.0.0.1:4466/startmode?m=error"   -> StartStream fails; m=never: accepted but never live;
                                                        m=hostile / m=long: the error comment has a bidi override and a
@@ -73,6 +74,7 @@ state = {
                              # hostile: a refusal with a bidi override and a line break; notactive: "output is not active"
     'outputlist_fail': False,  # GetOutputList fails
     'hang': [],                # request types that never get an answer
+    'ws_version': '5.5.0',     # obsWebSocketVersion in the hello message
     'scenefail': False,        # GetSceneList fails with an error comment that has a bidi override and a line break
     'aitum_live_at': {},   # Aitum output name -> when a slow start goes live
     'live_at': 0.0,   # slow start: when the stream goes live
@@ -312,7 +314,7 @@ async def ws_handler(reader, writer, password):
                   'Sec-WebSocket-Accept: %s\r\n\r\n' % accept).encode())
     salt = base64.b64encode(os.urandom(16)).decode()
     challenge = base64.b64encode(os.urandom(16)).decode()
-    hello = {'obsWebSocketVersion': '5.5.mock', 'rpcVersion': 1}
+    hello = {'obsWebSocketVersion': state['ws_version'], 'rpcVersion': 1}
     if password:
         hello['authentication'] = {'salt': salt, 'challenge': challenge}
     await send(writer, {'op': 0, 'd': hello})
@@ -410,6 +412,8 @@ async def control_handler(reader, writer):
             state['aitum'].setdefault(hostile, False)
         else:
             state['aitum'].pop(hostile, None)
+    elif u.path == '/hello':
+        state['ws_version'] = q.get('version', '5.5.0')
     elif u.path == '/scenefail':
         state['scenefail'] = q.get('on') == '1'
     elif u.path == '/outputlist':

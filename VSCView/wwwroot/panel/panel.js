@@ -12,6 +12,9 @@
   // ---------------------------------------------------------------- helpers
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => Array.from(el.querySelectorAll(sel));
+  // Unicode isolates (FSI ... PDI) for user-named things shown inside plain text, so bidi characters in a name can't
+  // reorder the sentence around it; in HTML the same job is done by <bdi>.
+  const iso = v => '\u2068' + String(v ?? '') + '\u2069';
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
     get(k, d) { try { const v = localStorage.getItem('padsight.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -461,7 +464,7 @@
     const t = $('#obsStatusTag');
     t.className = 'tag ' + tone; t.textContent = tag;
     let text;
-    if (o.status === 'Connected') text = `Linked to OBS${o.version ? ' (WebSocket ' + o.version + ')' : ''}. Scene: ${o.scene || '?'}${o.streaming ? ' · live' : ''}${o.recording ? ' · recording' : ''}.`;
+    if (o.status === 'Connected') text = `Linked to OBS${o.version ? ' (WebSocket ' + o.version + ')' : ''}. Scene: ${o.scene ? iso(o.scene) : '?'}${o.streaming ? ' · live' : ''}${o.recording ? ' · recording' : ''}.`;
     else if (o.status === 'WrongPassword') text = 'OBS refused the password. Copy it again from OBS › Tools › WebSocket Server Settings › Show Connect Info.';
     else if (o.status === 'Unreachable') text = o.error || 'OBS isn\u2019t answering.';
     else if (o.status === 'Connecting') text = 'Connecting…';
@@ -752,15 +755,15 @@
     lastSig.obsLinked = sig;
     const addSel = $('#obsAddScene');
     const keep = addSel.value || sc.current;
-    addSel.innerHTML = sc.scenes.map(n => `<option ${n === keep ? 'selected' : ''}>${esc(n)}</option>`).join('');
+    addSel.innerHTML = sc.scenes.map(n => `<option value="${esc(n)}" ${n === keep ? 'selected' : ''}>${esc(iso(n))}</option>`).join('');
     $('#obsSources').innerHTML = sc.sources.length ? sc.sources.map(s => `
-      <div class="row spread"><div><b>${esc(s.name)}</b><p class="small mono">${esc(s.url)} · ${s.width}×${s.height}</p></div>
+      <div class="row spread"><div><b><bdi>${esc(s.name)}</bdi></b><p class="small mono"><bdi>${esc(s.url)}</bdi> · ${s.width}×${s.height}</p></div>
       ${s.portOk ? '<span class="tag ok">OK</span>' : `<button class="btn small" type="button" data-act="obs-fix" data-name="${esc(s.name)}">Fix port</button>`}</div>`).join('')
       : '<p class="small">No PadSight sources yet.</p>';
     const themeOpts = sel => `<option value="">Follow the app</option>` + (themes || []).map(t => `<option value="${esc(t.key)}" ${t.key === sel ? 'selected' : ''}>${esc(t.family)} · ${esc(themeTitle(t))}</option>`).join('');
     $('#obsRules').innerHTML = sc.scenes.map(n => `
       <div class="row spread" data-scene="${esc(n)}">
-        <b style="min-width:160px">${esc(n)}${n === o.scene ? ' <span class="tag ok">NOW</span>' : ''}</b>
+        <b style="min-width:160px"><bdi>${esc(n)}</bdi>${n === o.scene ? ' <span class="tag ok">NOW</span>' : ''}</b>
         <div class="row"><select data-rule="theme" aria-label="Theme on ${esc(n)}">${themeOpts(o.rules.sceneThemes[n])}</select>
         <label class="row small"><input type="checkbox" data-rule="hide" ${o.rules.hideScenes.includes(n) ? 'checked' : ''}> Hide here</label></div>
       </div>`).join('');

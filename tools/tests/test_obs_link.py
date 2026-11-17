@@ -9,6 +9,7 @@ import json
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 ap = argparse.ArgumentParser()
@@ -75,6 +76,7 @@ api('obs/connect', {'enabled': True, 'password': 'testpass'})
 s = wait_for(lambda s: s['status'] == 'Connected', 'connected')
 check('connects with the right password', s['status'] == 'Connected', s)
 check('reads the program scene', s['scene'] == 'Gameplay', s.get('scene'))
+check('shows the OBS WebSocket version', s.get('version') == '5.5.0', s.get('version'))
 stored = json.load(open(a.settings, encoding='utf-8-sig')).get('ObsPasswordProtected', '')
 check('password stored encrypted, not in plain text', stored and 'testpass' not in stored)
 check('state never returns the password', 'testpass' not in json.dumps(api('state')[1]))
@@ -91,6 +93,15 @@ control('/scenefail?on=1')
 code, r = api('obs/scenes')
 check('a hostile OBS error comment is not passed to the panel', code == 500 and r.get('error') == 'reason not shown', (code, r))
 control('/scenefail?on=0')
+
+# 3c. a version string that isn't a plain version number is not shown
+control('/hello?version=' + urllib.parse.quote('5.5' + chr(0x202E) + ' all good, no action needed'))
+api('obs/connect', {'enabled': True, 'password': 'testpass'})
+s = wait_for(lambda s: s['status'] == 'Connected', 'reconnected with an odd version')
+check('an odd OBS version string is not shown', s['status'] == 'Connected' and s.get('version') is None, s.get('version'))
+control('/hello?version=5.5.0')
+api('obs/connect', {'enabled': True, 'password': 'testpass'})
+wait_for(lambda s: s['status'] == 'Connected', 'reconnected')
 
 # 4. add a source
 base = a.panel + '/'

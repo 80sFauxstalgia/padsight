@@ -42,7 +42,12 @@ a { color: var(--accent); }
   background: transparent; color: var(--text-2); cursor: pointer; font-size: 14px;
 }
 .nav-links button:hover { background: rgba(255,255,255,.04); color: var(--text); }
-.nav-links button[aria-current="page"] { background: rgba(58, 214, 255, .12); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--text); font-weight: 600; border-left-color: var(--accent); }
+/* color-mix(): the base rule carries a plain rgba fallback (the default cyan accent; a custom accent applies only where
+   color-mix() works), and color-mix() is set only inside @supports. A declaration with var() counts as valid at parse
+   time, so placed in the base rule it would replace the fallback and then fail at computed time in older Chromium
+   (e.g. the OBS 29 dock), leaving the property at its initial value. */
+.nav-links button[aria-current="page"] { background: rgba(58, 214, 255, .12); color: var(--text); font-weight: 600; border-left-color: var(--accent); }
+@supports (background: color-mix(in srgb, red 50%, transparent)) { .nav-links button[aria-current="page"] { background: color-mix(in srgb, var(--accent) 12%, transparent); } }
 .nav-foot { margin-top: auto; padding: 0 10px; font: 11px/1.6 var(--mono); color: var(--muted); }
 .main { flex: 1; min-width: 0; overflow-y: auto; padding: 24px 30px 40px; outline: none; }
 .page { display: flex; flex-direction: column; gap: 18px; max-width: 1280px; }
@@ -94,7 +99,8 @@ p { margin: 0; }
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 14px; border-radius: 8px;
   border: 1px solid var(--line-2); background: transparent; color: var(--text); cursor: pointer; font-weight: 500; text-decoration: none;
 }
-.btn:hover { border-color: var(--accent); background: rgba(58, 214, 255, .08); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.btn:hover { border-color: var(--accent); background: rgba(58, 214, 255, .08); }
+@supports (background: color-mix(in srgb, red 50%, transparent)) { .btn:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); } }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .btn.primary:hover { filter: brightness(1.1); }
 .btn.big { padding: 12px 18px; font-size: 15px; }
@@ -108,7 +114,8 @@ p { margin: 0; }
 .tag.warn { background: var(--warn-bg); color: var(--warn); }
 .tag.err { background: var(--err-bg); color: var(--err); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 26px; }
-.chip { font: 11.5px var(--mono); padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(58, 214, 255, .5); border-color: color-mix(in srgb, var(--accent) 50%, transparent); color: var(--accent); background: rgba(58, 214, 255, .1); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.chip { font: 11.5px var(--mono); padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(58, 214, 255, .5); color: var(--accent); background: rgba(58, 214, 255, .1); }
+@supports (background: color-mix(in srgb, red 50%, transparent)) { .chip { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); } }
 .chips .none { font: 11.5px var(--mono); color: var(--muted); padding: 3px 0; }
 
 /* ---------- live controller widget ---------- */
@@ -178,7 +185,8 @@ p { margin: 0; }
 /* ---------- themes ---------- */
 .filters { display: flex; flex-wrap: wrap; gap: 8px; }
 .filters button { padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line-2); background: transparent; color: var(--text-2); cursor: pointer; font-size: 13px; }
-.filters button[aria-pressed="true"] { border-color: var(--accent); color: var(--text); background: rgba(58, 214, 255, .12); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.filters button[aria-pressed="true"] { border-color: var(--accent); color: var(--text); background: rgba(58, 214, 255, .12); }
+@supports (background: color-mix(in srgb, red 50%, transparent)) { .filters button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); } }
 .chip-select { padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--text-2); font-size: 13px; }
 .themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
 .theme { padding: 0; overflow: hidden; gap: 0; }
@@ -251,8 +259,9 @@ ol.steps-list b { color: var(--text); }
 .btn[aria-disabled="true"] { pointer-events: none; } /* no hover accent while inert */
 .modal ul { margin: 6px 0 10px; padding-left: 20px; }
 .dock .modal .btn { min-height: 44px; }
-/* rgba first: older Chromium (e.g. the OBS 29 dock) drops color-mix(), and the tag would fall back to the blue info tint */
-.tag.unknown, .tag.off { background: rgba(143, 163, 192, .14); background: color-mix(in srgb, var(--muted) 14%, transparent); color: var(--muted); }
+/* Grey for unknown/off: rgba fallback in the base rule, color-mix() only where supported (see the note at the top). */
+.tag.unknown, .tag.off { background: rgba(143, 163, 192, .14); color: var(--muted); }
+@supports (background: color-mix(in srgb, red 50%, transparent)) { .tag.unknown, .tag.off { background: color-mix(in srgb, var(--muted) 14%, transparent); } }
 .warn-text { color: var(--warn); }
 /* Comfortable tap targets inside the OBS dock */
 .dock #obsStreams .btn, .dock #obsStreams select, .dock #obsStreams input[type="text"] { min-height: 44px; }

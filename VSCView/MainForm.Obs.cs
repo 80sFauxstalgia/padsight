@@ -56,12 +56,16 @@ namespace VSCView
             overlayHub.Visible = HiddenReason() == null;
         }
 
+        // Scene names are the user's own data, so they are shown as they are, but wrapped in Unicode isolates (FSI ... PDI):
+        // bidi characters inside a name can't reorder the text around it.
+        internal static string Isolate(string s) => "\u2068" + s + "\u2069";
+
         private string HiddenReason()
         {
             if (manualHidden) return "Hidden with the hotkey or the panel";
             if (obs?.Status != ObsClient.ObsStatus.Connected) return null; // rules need OBS; never hide blindly
             if (settings.ObsHideScenes != null && obs.ProgramScene != null && settings.ObsHideScenes.Contains(obs.ProgramScene))
-                return $"Hidden on the scene \"{obs.ProgramScene}\"";
+                return $"Hidden on the scene \"{Isolate(obs.ProgramScene)}\"";
             if (settings.ObsOnlyWhenLive == true && !obs.Streaming && !obs.Recording)
                 return "Hidden until you go live or record";
             return null;
