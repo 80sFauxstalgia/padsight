@@ -38,20 +38,94 @@ namespace VSCView.Web
             server = new OverlayServer(port, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wwwroot"), ChannelForQuery)
             {
                 StatusJson = () => StatusJson?.Invoke() ?? "{}",
+                Api = req => Api?.Invoke(req),
+                ApiKey = ApiKey,
+                Preview = PreviewPng,
             };
             return server.Start();
         }
 
         public string Url => $"http://127.0.0.1:{Port}/";
 
+        private volatile bool visible = true;
+
+        /// <summary>Show or hide the overlay in every OBS source (panel previews keep showing it).</summary>
+        public bool Visible
+        {
+            get => visible;
+            set
+            {
+                visible = value;
+                foreach (var ch in Snapshot()) ch.Visible = value;
+            }
+        }
+
         /// <summary>Supplied by the window: a JSON snapshot for /status.json.</summary>
         public Func<string> StatusJson { get; set; }
+
+        /// <summary>Supplied by the window: the control panel API (key and Origin are checked by the server).</summary>
+        public Func<ApiRequest, ApiResponse> Api { get; set; }
+
+        /// <summary>Per-install control panel key. Set before <see cref="Start"/>.</summary>
+        public string ApiKey
+        {
+            get => apiKey;
+            set { apiKey = value; if (server != null) server.ApiKey = value; } // takes effect immediately
+        }
+        private string apiKey;
+
+        /// <summary>Control panel address; the key travels in the fragment, which browsers never send to a server.</summary>
+        public string PanelUrl => $"{Url}panel/#k={ApiKey}";
+
+        private readonly Dictionary<string, byte[]> previews = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        private readonly object previewLock = new object();
+
+        /// <summary>Idle render of a theme (no controller attached), cached. Null for unknown or broken themes.</summary>
+        public byte[] PreviewPng(string rel)
+        {
+            string file = ResolveThemeFile(rel ?? "");
+            if (file == null) return null;
+            lock (previewLock)
+            {
+                // Keyed by the layout's last write time, so an edited theme gets a fresh preview.
+                string cacheKey = file + "|" + File.GetLastWriteTimeUtc(file).Ticks;
+                if (previews.TryGetValue(cacheKey, out byte[] cached)) return cached;
+                byte[] png = null;
+                try
+                {
+                    using (UI ui = LoadUi(file, new ControllerData()))
+                    using (var bmp = new System.Drawing.Bitmap(Math.Max(1, ui.Width), Math.Max(1, ui.Height), System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+                    {
+                        using (var g = System.Drawing.Graphics.FromImage(bmp))
+                        {
+                            g.Clear(System.Drawing.Color.Transparent);
+                            ui.Paint(g);
+                        }
+                        using (var ms = new MemoryStream())
+                        {
+                            bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                            png = ms.ToArray();
+                        }
+                    }
+                }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Preview {rel}: {ex.Message}"); }
+                if (previews.Count > 200) previews.Clear();
+                previews[cacheKey] = png;
+                return png;
+            }
+        }
+
+        /// <summary>Theme path relative to themes/ with forward slashes (as used in URLs), or null.</summary>
+        public string ThemeKey(string themeFile) => RelativeThemePath(themeFile);
+
+        /// <summary>Full path of a URL theme path, or null if it isn't a theme layout inside themes/.</summary>
+        public string ThemeFile(string rel) => ResolveThemeFile(rel ?? "");
 
         public List<object> ChannelStats()
         {
             return Snapshot().Select(ch => (object)new
             {
-                key = ch.Key, clients = ch.ClientCount, fps = ch.Fps,
+                key = ch.Key, clients = ch.ClientCount, obs = ch.ExternalClientCount, fps = ch.Fps,
                 renderMs = Math.Round(ch.AvgRenderMs, 2), pngMs = Math.Round(ch.AvgEncodeMs, 2),
                 sent = ch.FramesSent, unchanged = ch.FramesSkipped,
             }).ToList();
@@ -154,7 +228,7 @@ namespace VSCView.Web
                     }
                     if (channels.Count >= MaxChannels) { ui?.Dispose(); throw new InvalidOperationException("Too many overlay channels"); }
                 }
-                var ch = new OverlayChannel(key, ClampFps(fps), true);
+                var ch = new OverlayChannel(key, ClampFps(fps), true) { Visible = visible };
                 if (ui != null) ch.SetUi(ui);
                 channels[key] = ch;
                 created = true;

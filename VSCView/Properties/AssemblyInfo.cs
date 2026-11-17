@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("VSCView")]
-[assembly: AssemblyDescription("This application allows the viewing of raw input from the Steam Controller and various other controllers for use in on screen displays for videos and streams.")]
+[assembly: AssemblyTitle("PadSight")]
+[assembly: AssemblyDescription("PadSight shows live input from Steam Controllers (2015 and 2026) and other controllers as a transparent overlay for OBS, videos and streams. Based on VSCView by Nielk1 (John Klein), MIT.")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("Talaria Software LLC")]
-[assembly: AssemblyProduct("VSCView")]
+[assembly: AssemblyProduct("PadSight")]
 [assembly: AssemblyCopyright("© 2018-2021 John Klein, © 2026 Talaria Software LLC")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
@@ -32,5 +32,5 @@ using System.Runtime.InteropServices;
 // You can specify all the values or you can default the Build and Revision Numbers
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("0.6.0.0")]
-[assembly: AssemblyFileVersion("0.6.0.0")]
+[assembly: AssemblyVersion("0.7.0.0")]
+[assembly: AssemblyFileVersion("0.7.0.0")]

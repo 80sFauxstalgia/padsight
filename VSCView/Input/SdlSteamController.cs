@@ -4,6 +4,7 @@ using ExtendInput.DeviceProvider;
 using SDL3;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace VSCView.Input
 {
@@ -16,7 +17,8 @@ namespace VSCView.Input
     ///   stick_left, stick_right, stick_touch (l/r capacitive),
     ///   touch_left, touch_right (ControlTouchPressure),
     ///   grip (upper back buttons L4/R4), grip2 (lower back buttons L5/R5),
-    ///   grip_sense (l/r capacitive grip touch).
+    ///   grip_sense (l/r capacitive grip touch),
+    ///   motion (gyro + accelerometer, fused into an orientation; same units as the 2015 controller).
     /// </summary>
     public sealed class SdlSteamController : IController
     {
@@ -68,7 +70,11 @@ namespace VSCView.Input
         public string[] NameDetails => new[] { "via SDL3" };
         public string UniqueID => device.UniqueKey;
         public IDevice DeviceHackRef => device;
-        public bool HasMotion => false;
+        public bool HasMotion => motionOn;
+
+        /// <summary>Read the gyro and accelerometer (Settings › 2026 controller gyro). Applied on the SDL thread.</summary>
+        public static volatile bool MotionEnabled = true;
+        private bool motionOn;
         public bool IsPresent => Gamepad != IntPtr.Zero;
 
         public ControllerState GetState() => state;
@@ -102,6 +108,7 @@ namespace VSCView.Input
             s.Controls["grip"] = new ControlButtonPair();
             s.Controls["grip2"] = new ControlButtonPair();
             s.Controls["grip_sense"] = new ControlButtonPair();
+            s.Controls["motion"] = new ControlMotion();
             return s;
         }
 
@@ -151,9 +158,110 @@ namespace VSCView.Input
             ReadPad(pad, 0, (ControlTouchPressure)s.Controls["touch_left"], B(BTN_L_PAD_CLICK));
             ReadPad(pad, 1, (ControlTouchPressure)s.Controls["touch_right"], B(BTN_R_PAD_CLICK));
 
+            UpdateSensorsEnabled(pad);
+            if (motionOn) ReadMotion(pad, (ControlMotion)s.Controls["motion"]);
+
             state = s;
             ControllerStateUpdate?.Invoke(this, s);
         }
+
+        // ------------------------------------------------------------------ motion
+        // SDL reports the gyro in rad/s and the accelerometer in m/s^2, in its gamepad frame (X right, Y up out
+        // of the face, Z toward the player). The theme engine expects what the 2015 controller sends: an
+        // orientation quaternion plus raw gyro/accel counts, in a frame with X right, Y forward (away from the
+        // player) and Z up. So: remap the axes, fuse gyro + gravity with a Mahony filter, scale to those units.
+        private const float GyroCountsPerDegPerSec = 16.4f;   // 2015 controller: +-2000 deg/s full scale
+        private const float AccelCountsPerG = 16384f;          // 2015 controller: +-2 g full scale
+        private const float FusionGain = 1.0f;                 // how fast gravity corrects gyro drift
+        private float qw = 1, qx, qy, qz;
+        private readonly Stopwatch motionClock = new Stopwatch();
+        private bool orientationSeeded;
+
+        private bool noSensors;
+
+        private void UpdateSensorsEnabled(IntPtr pad)
+        {
+            bool want = MotionEnabled && !noSensors;
+            if (want == motionOn) return;
+            if (want && !(SDL.SDL_GamepadHasSensor(pad, SDL.SDL_SensorType.SDL_SENSOR_GYRO) && SDL.SDL_GamepadHasSensor(pad, SDL.SDL_SensorType.SDL_SENSOR_ACCEL)))
+            {
+                noSensors = true; // this device reports no IMU: don't ask again on every poll
+                return;
+            }
+            bool gyroOk = SDL.SDL_SetGamepadSensorEnabled(pad, SDL.SDL_SensorType.SDL_SENSOR_GYRO, want);
+            bool accelOk = SDL.SDL_SetGamepadSensorEnabled(pad, SDL.SDL_SensorType.SDL_SENSOR_ACCEL, want);
+            motionOn = want && gyroOk && accelOk;
+            if (want && !motionOn) noSensors = true;
+            orientationSeeded = false;
+            motionClock.Restart();
+        }
+
+        private unsafe void ReadMotion(IntPtr pad, ControlMotion m)
+        {
+            float* g = stackalloc float[3];
+            float* a = stackalloc float[3];
+            if (!SDL.SDL_GetGamepadSensorData(pad, SDL.SDL_SensorType.SDL_SENSOR_GYRO, g, 3) ||
+                !SDL.SDL_GetGamepadSensorData(pad, SDL.SDL_SensorType.SDL_SENSOR_ACCEL, a, 3))
+                return;
+
+            // SDL frame -> 2015 controller frame.
+            float gx = g[0], gy = -g[2], gz = g[1];
+            float ax = a[0], ay = -a[2], az = a[1];
+
+            float dt = (float)motionClock.Elapsed.TotalSeconds;
+            motionClock.Restart();
+            if (dt <= 0 || dt > 0.1f) dt = 0.002f;
+            Fuse(gx, gy, gz, ax, ay, az, dt);
+
+            const float RadToDeg = 57.29578f;
+            m.AngularVelocityX = Counts(gx * RadToDeg * GyroCountsPerDegPerSec);
+            m.AngularVelocityY = Counts(gy * RadToDeg * GyroCountsPerDegPerSec);
+            m.AngularVelocityZ = Counts(gz * RadToDeg * GyroCountsPerDegPerSec);
+            m.AccelerometerX = Counts(ax / 9.80665f * AccelCountsPerG);
+            m.AccelerometerY = Counts(ay / 9.80665f * AccelCountsPerG);
+            m.AccelerometerZ = Counts(az / 9.80665f * AccelCountsPerG);
+            m.OrientationW = Counts(qw * 32767f);
+            m.OrientationX = Counts(qx * 32767f);
+            m.OrientationY = Counts(qy * 32767f);
+            m.OrientationZ = Counts(qz * 32767f);
+        }
+
+        /// <summary>Mahony filter (proportional term only): integrate the gyro, pull "up" toward measured gravity.</summary>
+        private void Fuse(float gx, float gy, float gz, float ax, float ay, float az, float dt)
+        {
+            float an = (float)Math.Sqrt(ax * ax + ay * ay + az * az);
+            if (!orientationSeeded && an > 0.5f)
+            {
+                // Start level with gravity so the first frames don't swing in from identity.
+                ax /= an; ay /= an; az /= an;
+                float pitch = (float)Math.Atan2(ay, az), roll = (float)Math.Atan2(-ax, Math.Sqrt(ay * ay + az * az));
+                float cp = (float)Math.Cos(pitch / 2), sp = (float)Math.Sin(pitch / 2);
+                float cr = (float)Math.Cos(roll / 2), sr = (float)Math.Sin(roll / 2);
+                qw = cp * cr; qx = sp * cr; qy = cp * sr; qz = -sp * sr;
+                orientationSeeded = true;
+                return;
+            }
+            if (an > 0.5f && an < 20f) // ignore free fall and hard shakes
+            {
+                ax /= an; ay /= an; az /= an;
+                // Gravity ("up") as the current orientation predicts it, in the controller's frame.
+                float vx = 2 * (qx * qz - qw * qy);
+                float vy = 2 * (qw * qx + qy * qz);
+                float vz = qw * qw - qx * qx - qy * qy + qz * qz;
+                gx += FusionGain * (ay * vz - az * vy);
+                gy += FusionGain * (az * vx - ax * vz);
+                gz += FusionGain * (ax * vy - ay * vx);
+            }
+            float hw = 0.5f * dt;
+            float nw = qw + (-qx * gx - qy * gy - qz * gz) * hw;
+            float nx = qx + (qw * gx + qy * gz - qz * gy) * hw;
+            float ny = qy + (qw * gy - qx * gz + qz * gx) * hw;
+            float nz = qz + (qw * gz + qx * gy - qy * gx) * hw;
+            float n = (float)Math.Sqrt(nw * nw + nx * nx + ny * ny + nz * nz);
+            if (n > 0) { qw = nw / n; qx = nx / n; qy = ny / n; qz = nz / n; }
+        }
+
+        private static short Counts(float v) => (short)Math.Max(-32767f, Math.Min(32767f, v));
 
         private static void ReadPad(IntPtr pad, int index, ControlTouchPressure t, bool click)
         {

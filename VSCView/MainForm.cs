@@ -69,7 +69,6 @@ namespace VSCView
             DeviceManager = new DeviceManager();
 
             ControllerData = new ControllerData();
-            overlayHub = new Web.OverlayHub(ControllerData);
             state = new ControllerState();
             // 5s lookback for smoothing
             sensorData = new SensorCollector(5, true);
@@ -83,7 +82,8 @@ namespace VSCView
 
             LoadThemes();
             LoadSettings();
-            overlayHub.DefaultFps = settings.OverlayFps ?? 60;
+            InitPanel();
+            overlayHub = CreateHub();
             AddOverlayMenu();
             if (File.Exists("ctrl.last"))
             {
@@ -142,9 +142,13 @@ namespace VSCView
         /// <param name="e"></param>
         private void MainForm_Load(object sender, EventArgs e)
         {
+            if (!FirstLoad()) return;
             if (settings.OverlayEnabled ?? true)
                 StartOverlayServer();
             LoadControllers(true);
+            InitObs();
+            RegisterHotkeys();
+            BeginInvoke(new Action(AfterStartup));
         }
 
         #region OBS Browser Source
@@ -168,7 +172,7 @@ namespace VSCView
                 settings.OverlayEnabled = !(settings.OverlayEnabled ?? true);
                 SaveSettings();
                 if (settings.OverlayEnabled ?? true) StartOverlayServer();
-                else { overlayHub.Dispose(); overlayHub = new Web.OverlayHub(ControllerData) { DefaultFps = settings.OverlayFps ?? 60 }; if (currentThemeFile != null) overlayHub.SetMainTheme(currentThemeFile); }
+                else { overlayHub.Dispose(); overlayHub = CreateHub(); if (currentThemeFile != null) overlayHub.SetMainTheme(currentThemeFile); }
                 UpdateOverlayMenu();
             });
             tsmiOverlay.DropDownItems.Add(new ToolStripMenuItem("Copy URL (follows window theme)", null, (s, e) => CopyText(overlayHub.Url)));
@@ -255,9 +259,15 @@ namespace VSCView
             if (restart)
             {
                 overlayHub.Dispose();
-                overlayHub = new Web.OverlayHub(ControllerData) { DefaultFps = settings.OverlayFps ?? 60 };
+                overlayHub = CreateHub();
                 if (currentThemeFile != null) overlayHub.SetMainTheme(currentThemeFile);
                 if (settings.OverlayEnabled ?? true) StartOverlayServer();
+                // The panel is served by the same server, so follow it to the new port.
+                if (panelForm != null && !panelForm.IsDisposed)
+                {
+                    if (overlayHub.IsRunning) panelForm.Navigate(overlayHub.PanelUrl, $"http://127.0.0.1:{overlayHub.Port}/");
+                    else panelForm.Close();
+                }
             }
             UpdateOverlayMenu();
             AutoLoadController();
@@ -272,9 +282,49 @@ namespace VSCView
             return s;
         }
 
-        /// <summary>Key used to remember a theme per kind of controller (e.g. DEVICE_SC, DEVICE_SC2026).</summary>
-        private static string ControllerKind(IController c) =>
-            c?.ControllerTypeCode?.FirstOrDefault(t => t != "DEVICE_NONE");
+        /// <summary>
+        /// The kind of controller, used to remember a theme per kind and to pick a matching default:
+        /// DEVICE_SC2026, DEVICE_SC (2015), DEVICE_SC_CHELL, DEVICE_DS5, DEVICE_DS4, DEVICE_XBOX (any XInput pad).
+        /// Hardware revisions (e.g. DEVICE_DS4V1/V2) share one kind. Null for an empty receiver slot.
+        /// </summary>
+        internal static string ControllerKind(IController c)
+        {
+            string[] codes = c?.ControllerTypeCode;
+            if (codes == null) return null;
+            foreach (var (code, kind) in KindCodes)
+                if (codes.Contains(code)) return kind;
+            return codes.FirstOrDefault(t => t != "DEVICE_NONE");
+        }
+
+        private static readonly (string code, string kind)[] KindCodes =
+        {
+            ("DEVICE_SC2026", "DEVICE_SC2026"), ("DEVICE_SC_CHELL", "DEVICE_SC_CHELL"), ("DEVICE_SC", "DEVICE_SC"),
+            ("DEVICE_DS5", "DEVICE_DS5"), ("DEVICE_DS4", "DEVICE_DS4"), ("DEVICEXBOX", "DEVICE_XBOX"),
+        };
+
+        /// <summary>Which kind of controller a theme file is drawn for (from its family folder), or null for general themes.</summary>
+        internal static string ThemeKind(string themeFile)
+        {
+            if (themeFile == null) return null;
+            string full = Path.GetFullPath(themeFile), themes = Path.GetFullPath("themes") + Path.DirectorySeparatorChar;
+            if (!full.StartsWith(themes, StringComparison.OrdinalIgnoreCase)) return null;
+            string family = full.Substring(themes.Length).Split(Path.DirectorySeparatorChar)[0];
+            return ThemeFamilyKinds.TryGetValue(family, out string kind) ? kind : null;
+        }
+
+        /// <summary>The theme a controller kind gets: the one the user picked for it, else a built-in default.</summary>
+        internal string ThemeForKind(string kind, out bool remembered)
+        {
+            remembered = false;
+            if (kind == null) return null;
+            if ((settings.RememberThemePerController ?? true) && settings.ThemeByController != null &&
+                settings.ThemeByController.TryGetValue(kind, out string file) && File.Exists(file))
+            {
+                remembered = true;
+                return file;
+            }
+            return DefaultThemeFor(kind);
+        }
 
         private void RememberThemeForActiveController(string themeFile)
         {
@@ -284,15 +334,44 @@ namespace VSCView
             settings.ThemeByController[kind] = themeFile;
         }
 
+        /// <summary>
+        /// Swap the overlay to the right look for the controller now on it: the theme picked for that kind before,
+        /// or, when the theme on screen is drawn for a different kind of controller (or none is loaded), the
+        /// built-in default for this kind. A general theme the user chose stays as it is.
+        /// </summary>
         private void ApplyRememberedTheme()
         {
-            if (!(settings.RememberThemePerController ?? true)) return;
+            if (sceneThemeActive) return; // an OBS scene rule decides the theme for now
             string kind = ControllerKind(ActiveController);
-            if (kind == null || settings.ThemeByController == null) return;
-            if (!settings.ThemeByController.TryGetValue(kind, out string file) || !File.Exists(file)) return;
+            if (kind == null) return;
+            string file = ThemeForKind(kind, out bool remembered);
+            if (!remembered)
+            {
+                string shownKind = ThemeKind(currentThemeFile);
+                bool wrongKind = currentThemeFile == null || (shownKind != null && shownKind != kind);
+                if (!wrongKind) return;
+            }
+            if (file == null) return;
             if (currentThemeFile != null && Path.GetFullPath(file).Equals(Path.GetFullPath(currentThemeFile), StringComparison.OrdinalIgnoreCase)) return;
             if (InvokeRequired) BeginInvoke(new Action(() => LoadThemeSafe(file)));
             else LoadThemeSafe(file);
+        }
+
+        /// <summary>A built-in theme for a kind of controller, used until the user picks one.</summary>
+        internal static string DefaultThemeFor(string kind)
+        {
+            string[] candidates;
+            switch (kind)
+            {
+                case "DEVICE_SC2026": candidates = new[] { @"themes\steamcontroller2026\realistic\Full.json", @"themes\steamcontroller2026\graphite\Full.json" }; break;
+                case "DEVICE_SC": candidates = new[] { @"themes\steamcontroller\realistic\Full.json", @"themes\steamcontroller\graphite\Full.json" }; break;
+                // DEVICE_SC_CHELL: no bundled theme (upstream's was built on a product photo); a user-installed one still works.
+                case "DEVICE_DS5": candidates = new[] { @"themes\dualsense\default\midnight black\All.json" }; break;
+                case "DEVICE_DS4": candidates = new[] { @"themes\dualshock4\default\V2\jet black\all.json" }; break;
+                case "DEVICE_XBOX": candidates = new[] { @"themes\xboxwirelesscontroller\default\Xbox One S\XB1 S (Black).json", @"themes\xbox360controller\default\XB360 (Black).json" }; break;
+                default: return null;
+            }
+            return candidates.FirstOrDefault(File.Exists);
         }
 
         System.Windows.Forms.Timer followTimer;
@@ -315,7 +394,10 @@ namespace VSCView
             // they would always "win". Ignore them whenever a controller with its own driver is connected.
             if (present.Any(c => !(c is XInputController)))
                 present = present.Where(c => !(c is XInputController)).ToList();
-            if (present.Count < 2) return; // nothing to follow
+            if (present.Count == 0) return;
+            // One controller already on the overlay: nothing to follow. One controller and nothing on the
+            // overlay yet: put it there as soon as it's used ("press any button" in the setup).
+            if (present.Count == 1 && ActiveController == present[0] && ActiveController.IsPresent) return;
 
             DateTime now = DateTime.UtcNow;
             foreach (IController c in present)
@@ -360,7 +442,7 @@ namespace VSCView
                 }).ToList();
                 var snap = new
                 {
-                    app = "VSCView",
+                    app = "PadSight",
                     theme = currentThemeFile,
                     followMode = settings.FollowActiveController ?? true,
                     sdl = DeviceManager.SdlStatus,
@@ -475,6 +557,7 @@ namespace VSCView
 
         protected override void WndProc(ref Message message)
         {
+            if (HandleHotkeyMessage(ref message)) return;
             base.WndProc(ref message);
 
             if (message.Msg == 0x84) // WM_NCHITTEST
@@ -1019,6 +1102,8 @@ namespace VSCView
         private void MainForm_FormClosed(object sender, FormClosedEventArgs e)
         {
             ttimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            DisposePanel();
+            obs?.Dispose();
             overlayHub?.Dispose();
             DeviceManager.Shutdown();
             ControllerMemoHack?.ToList()?.ForEach(dr =>

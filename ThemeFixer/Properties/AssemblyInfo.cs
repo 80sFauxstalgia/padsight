@@ -6,10 +6,10 @@ using System.Runtime.InteropServices;
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
 [assembly: AssemblyTitle("ThemeFixer")]
-[assembly: AssemblyDescription("Upgrades themes for VSCView")]
+[assembly: AssemblyDescription("Upgrades VSCView-format themes for PadSight")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("Nielk1")]
-[assembly: AssemblyProduct("VSCView")]
+[assembly: AssemblyProduct("PadSight")]
 [assembly: AssemblyCopyright("John Klein © 2020")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

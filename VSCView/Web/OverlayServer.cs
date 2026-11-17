@@ -26,6 +26,15 @@ namespace VSCView.Web
 
         /// <summary>Optional JSON for GET /status.json (controllers, SDL status, channel stats).</summary>
         public Func<string> StatusJson { get; set; }
+
+        /// <summary>Control panel API (<c>/api/...</c>). Called only after the key and Origin checks pass.</summary>
+        public Func<ApiRequest, ApiResponse> Api { get; set; }
+
+        /// <summary>Per-install key the control panel must send in <c>X-Panel-Key</c>.</summary>
+        public string ApiKey { get; set; }
+
+        /// <summary>Idle preview PNG for a theme path under themes/ (GET /preview?theme=...). Null when unknown.</summary>
+        public Func<string, byte[]> Preview { get; set; }
         private TcpListener listener;
         private Thread acceptThread;
         private volatile bool running;
@@ -121,9 +130,27 @@ namespace VSCView.Web
                 if (q >= 0) { path = target.Substring(0, q); query = target.Substring(q + 1); }
                 path = Uri.UnescapeDataString(path);
 
+                if (path.StartsWith("/api/", StringComparison.Ordinal))
+                {
+                    HandleApi(stream, method, path, query, headers);
+                    return false;
+                }
+
                 if (method != "GET")
                 {
                     WriteSimple(stream, 405, "Method Not Allowed", "text/plain", Encoding.UTF8.GetBytes("GET only"));
+                    return false;
+                }
+
+                if (path == "/preview")
+                {
+                    string theme = null;
+                    foreach (string part in query.Split('&'))
+                        if (part.StartsWith("theme=", StringComparison.Ordinal))
+                            theme = Uri.UnescapeDataString(part.Substring(6).Replace('+', ' '));
+                    byte[] png = theme == null ? null : Preview?.Invoke(theme);
+                    if (png == null) WriteSimple(stream, 404, "Not Found", "text/plain", Encoding.UTF8.GetBytes("Unknown theme"));
+                    else WriteSimple(stream, 200, "OK", "image/png", png);
                     return false;
                 }
 
@@ -166,7 +193,7 @@ namespace VSCView.Web
                     stream.ReadTimeout = Timeout.Infinite;
 
                     keepOpen = true;
-                    var ws = new WebSocketClient(client, stream);
+                    var ws = new WebSocketClient(client, stream) { IsPreview = ("&" + query + "&").Contains("&preview=1&") };
                     ws.Closed += _ => Interlocked.Decrement(ref connections);
                     channel.Attach(ws); // subscribes to Closed before the socket threads start
                     ws.Start();
@@ -181,6 +208,14 @@ namespace VSCView.Web
                 }
 
                 if (path == "/" || path == "") path = "/overlay.html";
+                else if (path == "/panel")
+                {
+                    // Relative links in the panel need the trailing slash; the fragment (key) survives a redirect.
+                    byte[] r = Encoding.ASCII.GetBytes("HTTP/1.1 301 Moved Permanently\r\nLocation: /panel/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    stream.Write(r, 0, r.Length);
+                    return false;
+                }
+                else if (path.EndsWith("/")) path += "index.html";
                 ServeStatic(stream, path);
             }
             catch (Exception ex)
@@ -196,6 +231,66 @@ namespace VSCView.Web
                 }
             }
             return keepOpen;
+        }
+
+        private const int MaxBody = 64 * 1024;
+
+        /// <summary>
+        /// /api/*: the Origin (when a browser sends one) must be this server, the key must match, and a POST must
+        /// be JSON. A cross-site page can't set the key header or a JSON content type without a CORS preflight,
+        /// which this server never answers, so the browser blocks it before anything runs.
+        /// </summary>
+        private void HandleApi(Stream stream, string method, string path, string query, Dictionary<string, string> headers)
+        {
+            ApiResponse res;
+            if (headers.TryGetValue("origin", out string origin) && !IsLoopbackOrigin(origin))
+                res = ApiResponse.Error(403, "Forbidden origin");
+            else if (Api == null || !PanelKey.Matches(ApiKey, headers.TryGetValue("x-panel-key", out string k) ? k : null))
+                res = ApiResponse.Error(401, "Missing or wrong panel key. Open the panel from the app or its tray icon.");
+            else if (method != "GET" && method != "POST")
+                res = ApiResponse.Error(405, "GET or POST only");
+            else if (method == "POST" && !(headers.TryGetValue("content-type", out string ct) && ct.StartsWith("application/json", StringComparison.OrdinalIgnoreCase)))
+                res = ApiResponse.Error(415, "JSON only");
+            else
+            {
+                string body = "";
+                if (method == "POST")
+                {
+                    int len = headers.TryGetValue("content-length", out string cl) && int.TryParse(cl, out int n) ? n : 0;
+                    if (len < 0 || len > MaxBody)
+                    {
+                        WriteJson(stream, ApiResponse.Error(413, "Body too large"));
+                        return;
+                    }
+                    byte[] buf = new byte[len];
+                    int off = 0;
+                    while (off < len)
+                    {
+                        int r = stream.Read(buf, off, len - off);
+                        if (r <= 0) return;
+                        off += r;
+                    }
+                    body = Encoding.UTF8.GetString(buf);
+                }
+                var q = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string part in (query ?? "").Split('&'))
+                {
+                    if (part.Length == 0) continue;
+                    int eq = part.IndexOf('=');
+                    q[Uri.UnescapeDataString((eq < 0 ? part : part.Substring(0, eq)).Replace('+', ' '))] =
+                        eq < 0 ? "" : Uri.UnescapeDataString(part.Substring(eq + 1).Replace('+', ' '));
+                }
+                try { res = Api(new ApiRequest { Method = method, Path = path, Query = q, Body = body }) ?? ApiResponse.Error(404, "Unknown API"); }
+                catch (Exception ex) { res = ApiResponse.Error(500, ex.Message); }
+            }
+            WriteJson(stream, res);
+        }
+
+        private static void WriteJson(Stream stream, ApiResponse res)
+        {
+            string reason = res.Code == 200 ? "OK" : res.Code == 401 ? "Unauthorized" : res.Code == 403 ? "Forbidden" :
+                            res.Code == 404 ? "Not Found" : res.Code >= 500 ? "Internal Server Error" : "Bad Request";
+            WriteSimple(stream, res.Code, reason, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(res.Json ?? "{}"));
         }
 
         private void ServeStatic(Stream stream, string path)
@@ -215,16 +310,25 @@ namespace VSCView.Web
                 case ".css": type = "text/css; charset=utf-8"; break;
                 case ".png": type = "image/png"; break;
                 case ".svg": type = "image/svg+xml"; break;
+                case ".ico": type = "image/x-icon"; break;
+                case ".json": type = "application/json; charset=utf-8"; break;
                 default: type = "application/octet-stream"; break;
             }
-            WriteSimple(stream, 200, "OK", type, File.ReadAllBytes(full));
+            // The control panel gets a strict policy: its own scripts only, no third-party loads, no framing by
+            // other sites. (The OBS overlay page keeps its inline script, so it gets only the framing rule.)
+            string extra = "X-Frame-Options: SAMEORIGIN\r\n";
+            if (path.StartsWith("/panel/", StringComparison.Ordinal))
+                extra += "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+                         "img-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'\r\n" +
+                         "Referrer-Policy: no-referrer\r\n";
+            WriteSimple(stream, 200, "OK", type, File.ReadAllBytes(full), extra);
         }
 
-        private static void WriteSimple(Stream stream, int code, string reason, string type, byte[] body)
+        private static void WriteSimple(Stream stream, int code, string reason, string type, byte[] body, string extraHeaders = "")
         {
             byte[] head = Encoding.ASCII.GetBytes(
                 $"HTTP/1.1 {code} {reason}\r\nContent-Type: {type}\r\nContent-Length: {body.Length}\r\n" +
-                "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n");
+                "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n" + extraHeaders + "Connection: close\r\n\r\n");
             stream.Write(head, 0, head.Length);
             stream.Write(body, 0, body.Length);
             stream.Flush();
@@ -285,6 +389,9 @@ namespace VSCView.Web
 
         public event Action<WebSocketClient> Closed;
         public bool IsClosed => closed;
+
+        /// <summary>True for the control panel's own preview (<c>?preview=1</c>), so it isn't counted as an OBS source.</summary>
+        public bool IsPreview { get; set; }
 
         public WebSocketClient(TcpClient client, Stream stream)
         {

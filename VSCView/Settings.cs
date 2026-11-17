@@ -29,5 +29,24 @@ namespace VSCView
         public bool? FollowActiveController { get; set; }
         public bool? RememberThemePerController { get; set; }
         public Dictionary<string, string> ThemeByController { get; set; }
+
+        // Control panel
+        public string PanelKey { get; set; }          // per-install key for the panel API (local only)
+        public bool? OpenPanelOnStart { get; set; }
+        public bool? ShowPreviewWindow { get; set; }  // the classic borderless window
+        public bool? SetupDone { get; set; }
+        public string Accent { get; set; }            // "#rrggbb", null = default cyan
+        public bool? Gyro2026 { get; set; }           // read the 2026 controller's gyro (default on)
+
+        // OBS link (obs-websocket)
+        public bool? ObsEnabled { get; set; }
+        public string ObsHost { get; set; }
+        public int? ObsPort { get; set; }
+        public string ObsPasswordProtected { get; set; }  // DPAPI, current Windows user only
+        public Dictionary<string, string> ObsSceneThemes { get; set; } // scene name -> theme path under themes/
+        public List<string> ObsHideScenes { get; set; }
+        public bool? ObsOnlyWhenLive { get; set; }
+        public string HotkeyToggle { get; set; }      // e.g. "Ctrl+Alt+F9": hide/show the overlay
+        public string HotkeyNext { get; set; }        // next controller
     }
 }
