@@ -240,6 +240,7 @@ namespace VSCView.Obs
                     StreamsChanged?.Invoke();
                     break;
                 case "VendorEvent":
+                    if ((string)data?["vendorName"] != StreamTargets.AitumVendor) break;
                     StreamsVersion++;
                     StreamsChanged?.Invoke();
                     break;

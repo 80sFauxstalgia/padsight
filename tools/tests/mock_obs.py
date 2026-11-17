@@ -20,6 +20,10 @@ A tiny control port lets a test drive OBS-side changes:
   curl "http://127.0.0.1:4466/state"               -> JSON dump of scenes and inputs
   curl "http://127.0.0.1:4466/reset"               -> back to the starting scenes and inputs
   curl "http://127.0.0.1:4466/plugins?mrtmp=0&aitum=0" -> pretend the multistream plugins aren't installed
+       (also dup=1: Aitum lists a name twice; nonascii=1: a non-ASCII obs-multi-rtmp id; hostile=1: an Aitum
+        output whose name is HTML)
+  curl "http://127.0.0.1:4466/startmode?m=error"   -> StartStream fails; m=never: accepted but never live;
+                                                       m=slow: live 3 s after StartStream; m=ok: at once
 Standard library only.
 """
 import argparse
@@ -51,7 +55,9 @@ state = {
     'close_replies': 0,  # clients that answered our close frame (a polite close)
     'refused': 0,        # connection attempts while "restarting"
     'down_until': 0.0,
-    'plugins': {'mrtmp': True, 'aitum': True},
+    'plugins': {'mrtmp': True, 'aitum': True, 'dup': False, 'nonascii': False, 'hostile': False},
+    'start_mode': 'ok',
+    'live_at': 0.0,   # slow start: when the stream goes live
     'mrtmp': {'1001': False, '1002': False},              # target id -> running
     'aitum': {'Kick': False, 'YouTube Vertical': False},  # output name -> running
     'calls': [],    # stream-control requests, in order: [requestType, detail]
@@ -116,12 +122,24 @@ def handle_request(rtype, data):
         detail = d.get('hotkeyName') or (d.get('requestType', '') + ' ' + json.dumps(d.get('requestData', {}))).strip()
         state['calls'].append([rtype, detail])
     if rtype == 'StartStream':
-        if state['streaming']:
+        if state['streaming'] or state['live_at']:
             return False, (500, 'The stream output is already running.')
+        mode = state['start_mode']
+        if mode == 'error':
+            return False, (702, 'Failed to start the stream (mock).')
+        if mode == 'never':
+            return True, {}
+        if mode == 'slow':
+            import time
+            state['live_at'] = time.time() + 3
+            return True, {}
         state['streaming'] = True
         stream_event()
         return True, {}
     if rtype == 'StopStream':
+        if state['live_at'] and not state['streaming']:   # still connecting: stopping cancels it
+            state['live_at'] = 0.0
+            return True, {}
         if not state['streaming']:
             return False, (501, 'The stream output is not running.')
         state['streaming'] = False
@@ -139,6 +157,8 @@ def handle_request(rtype, data):
             keys += ['obs-multi-rtmp.start_all', 'obs-multi-rtmp.stop_all']
             for i in state['mrtmp']:
                 keys += ['obs-multi-rtmp.start.' + i, 'obs-multi-rtmp.stop.' + i]
+            if state['plugins']['nonascii']:
+                keys += ['obs-multi-rtmp.start.12\u00e9', 'obs-multi-rtmp.stop.12\u00e9']
         return True, {'hotkeys': keys}
     if rtype == 'TriggerHotkeyByName':
         name = (data or {}).get('hotkeyName', '')
@@ -155,7 +175,10 @@ def handle_request(rtype, data):
         rt, rd = d.get('requestType'), d.get('requestData') or {}
         out = {'vendorName': 'aitum-multistream', 'requestType': rt}
         if rt == 'get_outputs':
-            out['responseData'] = {'outputs': [{'name': n, 'vertical': 'Vertical' in n} for n in state['aitum']]}
+            names = list(state['aitum'])
+            if state['plugins']['dup']:
+                names.append('Kick')
+            out['responseData'] = {'outputs': [{'name': n, 'vertical': 'Vertical' in n} for n in names]}
             return True, out
         if rt in ('start_output', 'stop_output'):
             n = rd.get('name')
@@ -171,6 +194,11 @@ def handle_request(rtype, data):
     if rtype == 'GetCurrentProgramScene':
         return True, {'currentProgramSceneName': state['scene'], 'sceneName': state['scene']}
     if rtype == 'GetStreamStatus':
+        import time
+        if state['live_at'] and time.time() >= state['live_at']:
+            state['live_at'] = 0.0
+            state['streaming'] = True
+            stream_event()
         return True, {'outputActive': state['streaming'], 'outputReconnecting': False}
     if rtype == 'GetRecordStatus':
         return True, {'outputActive': state['recording']}
@@ -308,9 +336,16 @@ async def control_handler(reader, writer):
         state.clear()
         state.update(copy.deepcopy(INITIAL))
     elif u.path == '/plugins':
-        for k in ('mrtmp', 'aitum'):
+        for k in ('mrtmp', 'aitum', 'dup', 'nonascii', 'hostile'):
             if k in q:
                 state['plugins'][k] = q[k] == '1'
+        hostile = '<img src=x onerror=alert(1)>'
+        if state['plugins']['hostile']:
+            state['aitum'].setdefault(hostile, False)
+        else:
+            state['aitum'].pop(hostile, None)
+    elif u.path == '/startmode':
+        state['start_mode'] = q.get('m', 'ok')
     elif u.path == '/scene':
         state['scene'] = q.get('name', state['scene'])
         await broadcast_event('CurrentProgramSceneChanged', {'sceneName': state['scene']}, 1 << 2)

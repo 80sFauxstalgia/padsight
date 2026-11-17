@@ -289,6 +289,11 @@ namespace VSCView
         private static readonly Regex StreamKeyRx = new Regex(@"^(main|mrtmp:[A-Za-z0-9_\-]{1,64}|aitum:[^\x00-\x1F]{1,128})$");
         private static readonly Regex ComboNameRx = new Regex(@"^[\p{L}\p{N} _\-]{1,32}$");
         private static readonly Regex StreamTypeRx = new Regex(@"^[\p{L}\p{N} _\-\.]{1,24}$");
+        // Bidirectional-text controls can make a name read differently from what it is (e.g. in the go-live confirm).
+        private static bool HasBidiControl(string s) => s.Any(c => (c >= '‪' && c <= '‮') || (c >= '⁦' && c <= '⁩') || c == '‎' || c == '‏' || c == '؜');
+        // One start or stop at a time: a Stop sent while a Start waits for OBS must see the real state afterwards,
+        // not "everything off" followed by the Start bringing everything live.
+        private static readonly System.Threading.SemaphoreSlim streamOpLock = new System.Threading.SemaphoreSlim(1, 1);
 
         private object StreamPrefsView() => new
         {
@@ -323,11 +328,17 @@ namespace VSCView
             if (!(b["targets"] is JArray arr) || arr.Count == 0 || arr.Count > 50 || arr.Any(x => x.Type != JTokenType.String))
                 return ApiResponse.Error(400, "Choose at least one stream");
             var keys = arr.Select(x => (string)x).Distinct().ToList();
-            StreamDiscovery d = StreamTargets.Discover(obs);
-            var known = new HashSet<string>(d.Targets.Select(t => t.Key));
-            var unknown = keys.Where(k => !known.Contains(k)).ToList();
-            if (unknown.Count > 0) return ApiResponse.Error(400, "OBS doesn't have these streams (any more): " + string.Join(", ", unknown));
-            var results = StreamTargets.Run(obs, d, op == "start", keys);
+            if (!streamOpLock.Wait(30000)) return ApiResponse.Error(409, "Another start or stop is still running. Try again in a moment.");
+            List<StreamResult> results;
+            try
+            {
+                StreamDiscovery d = StreamTargets.Discover(obs); // fresh, inside the lock: the true state after any earlier action
+                var known = new HashSet<string>(d.Targets.Select(t => t.Key));
+                var unknown = keys.Where(k => !known.Contains(k)).ToList();
+                if (unknown.Count > 0) return ApiResponse.Error(400, "OBS doesn't have these streams (any more): " + string.Join(", ", unknown));
+                results = StreamTargets.Run(obs, d, op == "start", keys);
+            }
+            finally { streamOpLock.Release(); }
             Debug.WriteLine($"Stream {op}: " + string.Join("; ", results.Select(r => $"{r.Key} {(r.Ok ? "ok" : "failed")} {r.Message}")));
             return ApiResponse.Ok(JsonConvert.SerializeObject(new
             {
@@ -339,24 +350,26 @@ namespace VSCView
         /// <summary>POST /api/obs/streams/prefs {targets?: {key: {label, type}}, combos?: {name: [keys]}}. Replaces what it's given.</summary>
         private ApiResponse ApiObsStreamPrefs(JObject b)
         {
+            // Validate everything first; nothing is saved unless the whole request is valid.
+            Dictionary<string, StreamPref> map = null;
+            Dictionary<string, List<string>> combos = null;
             if (b["targets"] is JObject tp)
             {
-                var map = new Dictionary<string, StreamPref>();
+                map = new Dictionary<string, StreamPref>();
                 if (tp.Count > 100) return ApiResponse.Error(400, "Too many streams");
                 foreach (var p in tp.Properties())
                 {
                     if (!StreamKeyRx.IsMatch(p.Name)) return ApiResponse.Error(400, "Unknown stream key");
                     string label = ((string)p.Value?["label"] ?? "").Trim(), type = ((string)p.Value?["type"] ?? "").Trim();
-                    if (label.Length > 40 || label.Any(char.IsControl)) return ApiResponse.Error(400, "Keep stream names to 40 characters");
+                    if (label.Length > 40 || label.Any(char.IsControl) || HasBidiControl(label)) return ApiResponse.Error(400, "Keep stream names to 40 plain characters");
                     if (type.Length > 0 && !StreamTypeRx.IsMatch(type)) return ApiResponse.Error(400, "Use a short word for the type, e.g. Twitch");
                     if (label.Length > 0 || type.Length > 0) map[p.Name] = new StreamPref { Label = label.Length > 0 ? label : null, Type = type.Length > 0 ? type : null };
                 }
-                settings.StreamPrefs = map;
             }
             if (b["combos"] is JObject cp)
             {
                 if (cp.Count > 12) return ApiResponse.Error(400, "Up to 12 saved combinations");
-                var combos = new Dictionary<string, List<string>>();
+                combos = new Dictionary<string, List<string>>();
                 foreach (var p in cp.Properties())
                 {
                     string name = p.Name.Trim();
@@ -365,8 +378,9 @@ namespace VSCView
                         return ApiResponse.Error(400, $"\"{name}\" needs at least one stream");
                     combos[name] = keys.Select(k => (string)k).Distinct().ToList();
                 }
-                settings.StreamCombos = combos;
             }
+            if (map != null) settings.StreamPrefs = map;
+            if (combos != null) settings.StreamCombos = combos;
             SaveSettings();
             return ApiResponse.Ok(JsonConvert.SerializeObject(new { saved = StreamPrefsView() }));
         }

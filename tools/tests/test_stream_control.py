@@ -139,6 +139,79 @@ code, r = api('obs/streams/action', {'op': 'start', 'targets': ['aitum:Kick'], '
 check('a vanished plugin target is refused up front', code == 400, (code, r))
 control('/plugins?aitum=1')
 
+# 7b. a stop the user confirmed always reaches OBS, even when the list said "off"
+control('/reset')
+wait_connected()
+mark = len(calls())
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['main'], 'confirm': True})
+check('stop asks OBS even when the stream shows as off', code == 200 and calls()[mark:] == ['StopStream:{}'] and r['results'][0]['message'] == 'Already off', (r, calls()))
+
+# 7c. OBS's own stream fails to start: nothing else may start
+control('/startmode?m=error')
+code, r = api('obs/streams/action', {'op': 'start', 'targets': ['main', 'mrtmp:1001', 'aitum:Kick'], 'confirm': True})
+res = {x['key']: x for x in r.get('results', [])}
+c = calls()
+check('failed OBS start is reported', code == 200 and res['main']['ok'] is False, r)
+check('plugin targets are skipped when OBS fails to start', res.get('mrtmp:1001', {}).get('ok') is False and 'Skipped' in res['mrtmp:1001']['message'] and res['aitum:Kick']['ok'] is False, r)
+check('no plugin request after the failed start', not any(x.startswith(('TriggerHotkeyByName', 'CallVendorRequest')) for x in c), c)
+check('nothing is live after the failed start', not control('/state')['streaming'] and not any(control('/state')['mrtmp'].values()))
+
+control('/startmode?m=never')
+t0 = time.time()
+code, r = api('obs/streams/action', {'op': 'start', 'targets': ['main', 'aitum:Kick'], 'confirm': True})
+res = {x['key']: x for x in r.get('results', [])}
+check('a start that never goes live times out with a "may still go live" warning', code == 200 and res['main']['ok'] is False and 'may still go live' in res['main']['message'] and time.time() - t0 >= 14, r)
+check('and the plugin target is skipped', res['aitum:Kick']['ok'] is False and not control('/state')['aitum']['Kick'], r)
+
+# 7d. a Stop sent while a Start waits for OBS sees the real state afterwards (one operation at a time)
+import threading
+control('/reset')
+wait_connected()
+control('/startmode?m=slow')   # OBS goes live 3 s after StartStream
+out = {}
+def do_start():
+    out['start'] = api('obs/streams/action', {'op': 'start', 'targets': ['main', 'aitum:Kick'], 'confirm': True})
+th = threading.Thread(target=do_start)
+th.start()
+time.sleep(0.8)
+out['stop'] = api('obs/streams/action', {'op': 'stop', 'targets': ['main', 'aitum:Kick'], 'confirm': True})
+th.join()
+st = control('/state')
+check('start then an overlapping stop both succeed', out['start'][0] == 200 and out['stop'][0] == 200, out)
+check('after the overlapping stop nothing is left live', not st['streaming'] and not st['aitum']['Kick'], st)
+c = calls()
+check('the stop ran after the start finished', c == ['StartStream:{}', 'CallVendorRequest:start_output {"name": "Kick"}',
+                                                   'CallVendorRequest:stop_output {"name": "Kick"}', 'StopStream:{}'], c)
+control('/startmode?m=ok')
+
+# 7e. odd data from plugins
+control('/reset')
+wait_connected()
+control('/plugins?dup=1')
+code, r, t = streams()
+check('a duplicate Aitum name is listed once', code == 200 and [x['key'] for x in r['targets']].count('aitum:Kick') == 1, (code, list(t)))
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': list(t), 'confirm': True})
+check('stop all still works with a duplicate name', code == 200, (code, r))
+control('/plugins?dup=0&nonascii=1')
+code, r, t = streams()
+check('a non-ASCII obs-multi-rtmp id is left out', code == 200 and not any('12' in k and k.startswith('mrtmp:') and k not in ('mrtmp:1001', 'mrtmp:1002') for k in t), list(t))
+code, r = api('obs/streams/prefs', {'targets': {k: {'label': 'x', 'type': 'Other'} for k in t}})
+check('prefs for every listed stream can be saved', code == 200, (code, r))
+control('/plugins?nonascii=0&hostile=1')
+hostile = '<img src=x onerror=alert(1)>'
+code, r, t = streams()
+check('an Aitum name with HTML comes through as plain data', ('aitum:' + hostile) in t, list(t))
+code, r = api('obs/streams/action', {'op': 'start', 'targets': ['aitum:' + hostile], 'confirm': True})
+check('and can be started like any other', code == 200 and r['results'][0]['ok'], (code, r))
+control('/plugins?hostile=0')
+code, r = api('obs/streams/prefs', {'targets': {'main': {'label': '<b>bold</b> & "quotes"', 'type': 'Twitch'}}})
+check('a label with HTML is stored as text', code == 200 and r['saved']['prefs']['main']['Label'] == '<b>bold</b> & "quotes"', (code, r))
+code, r = api('obs/streams/prefs', {'targets': {'main': {'label': 'Main‮evil', 'type': 'Twitch'}}})
+check('a label with a bidi override is refused', code == 400, (code, r))
+code, r = api('obs/streams/prefs', {'targets': {'main': {'label': 'ok'}}, 'combos': {'bad name!': ['main']}})
+check('an invalid combination saves nothing', code == 400 and api('obs/streams')[1]['saved']['prefs'].get('main', {}).get('Label') != 'ok', (code, r))
+api('obs/streams/prefs', {'targets': {}, 'combos': {}})
+
 # 8. labels, types and combinations
 code, r = api('obs/streams/prefs', {'targets': {'main': {'label': 'Main', 'type': 'Twitch'}, 'mrtmp:1001': {'label': 'Second', 'type': 'YouTube'}},
                                     'combos': {'Weekend': ['main', 'mrtmp:1001']}})

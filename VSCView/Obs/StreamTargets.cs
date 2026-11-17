@@ -83,7 +83,7 @@ namespace VSCView.Obs
                     .Select(h => h.Substring(MultiRtmpStart.Length)).Where(IsSafeId).Distinct().ToList();
                 d.MultiRtmp = ids.Count > 0;
                 foreach (string id in ids)
-                    d.Targets.Add(new StreamTarget { Key = "mrtmp:" + id, Kind = "mrtmp", Name = id, Active = null });
+                    Add(d, new StreamTarget { Key = "mrtmp:" + id, Kind = "mrtmp", Name = id, Active = null });
             }
             catch (Exception ex) { Debug.WriteLine("GetHotkeyList: " + ex.Message); }
 
@@ -97,8 +97,8 @@ namespace VSCView.Obs
                 foreach (JToken o in outs ?? new JArray())
                 {
                     string name = o.Type == JTokenType.String ? (string)o : (string)o["name"];
-                    if (string.IsNullOrEmpty(name) || name.Length > 128) continue;
-                    d.Targets.Add(new StreamTarget
+                    if (!IsSafeAitumName(name)) continue;
+                    Add(d, new StreamTarget
                     {
                         Key = "aitum:" + name, Kind = "aitum", Name = name,
                         Active = activeOutputs.Contains(AitumOutputPrefix + name),
@@ -112,22 +112,47 @@ namespace VSCView.Obs
             return d;
         }
 
-        // obs-multi-rtmp ids are decimal strings; accept a little more, never anything that could change the hotkey name's meaning.
-        private static bool IsSafeId(string id) => id.Length > 0 && id.Length <= 64 && id.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_');
+        // A plugin can list the same name twice; the first one wins, so a duplicate never breaks every action.
+        private static void Add(StreamDiscovery d, StreamTarget t)
+        {
+            if (!d.Targets.Any(x => x.Key == t.Key)) d.Targets.Add(t);
+        }
+
+        // These two match the stream-key pattern the panel API accepts (MainForm.Obs.cs StreamKeyRx), so every target
+        // discovered here can also be saved in prefs. obs-multi-rtmp ids are decimal strings: ASCII only, never anything
+        // that could change the hotkey name's meaning.
+        internal static bool IsSafeId(string id) =>
+            !string.IsNullOrEmpty(id) && id.Length <= 64 && id.All(c => (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_');
+
+        internal static bool IsSafeAitumName(string name) =>
+            !string.IsNullOrEmpty(name) && name.Length <= 128 && name.All(c => c >= 0x20);
+
+        public const string SkippedNotLive = "Skipped: OBS's own stream isn't live, so nothing else was started";
 
         /// <summary>
-        /// Start or stop the given targets. Start: OBS's own stream first (plugins that share its encoder need it live),
-        /// then each plugin target. Stop: plugin targets first, then OBS's own stream.
+        /// Start or stop the given targets. Start: OBS's own stream first (plugins that share its encoder need it live);
+        /// if it fails or doesn't go live in time, no plugin target is started. Stop: plugin targets first, then OBS's own
+        /// stream. The caller holds the stream-operation lock, so a Stop never runs in the middle of a Start.
         /// </summary>
         public static List<StreamResult> Run(ObsClient obs, StreamDiscovery d, bool start, IList<string> keys, int mainWaitMs = 15000)
         {
-            var byKey = d.Targets.ToDictionary(t => t.Key);
-            var chosen = keys.Distinct().Select(k => byKey[k]).ToList();
+            var byKey = new Dictionary<string, StreamTarget>();
+            foreach (var t in d.Targets) if (!byKey.ContainsKey(t.Key)) byKey[t.Key] = t;
+            var chosen = keys.Distinct().Where(byKey.ContainsKey).Select(k => byKey[k]).ToList();
             var results = new List<StreamResult>();
             StreamTarget main = chosen.FirstOrDefault(t => t.Kind == "main");
             var plugins = chosen.Where(t => t.Kind != "main").ToList();
 
-            if (start && main != null) results.Add(StartMain(obs, main, mainWaitMs));
+            if (start && main != null)
+            {
+                StreamResult r = StartMain(obs, main, mainWaitMs);
+                results.Add(r);
+                if (!r.Ok)
+                {
+                    results.AddRange(plugins.Select(t => new StreamResult { Key = t.Key, Ok = false, Message = SkippedNotLive }));
+                    return results;
+                }
+            }
             foreach (var t in plugins)
             {
                 results.Add(RunPlugin(obs, t, start));
@@ -149,15 +174,21 @@ namespace VSCView.Obs
                     if ((bool?)obs.Request("GetStreamStatus")["outputActive"] == true) return new StreamResult { Key = t.Key, Ok = true, Message = "Live" };
                     Thread.Sleep(300);
                 }
-                return new StreamResult { Key = t.Key, Ok = false, Message = "OBS hasn't gone live yet. Check OBS for an error." };
+                return new StreamResult
+                {
+                    Key = t.Key, Ok = false,
+                    Message = $"OBS hasn't confirmed it's live after {waitMs / 1000} s. It may still go live, so watch OBS; stop it there or here if you don't want it.",
+                };
             }
             catch (Exception ex) { return new StreamResult { Key = t.Key, Ok = false, Message = Describe(ex) }; }
         }
 
+        // Always asks OBS, even when the list said "off": the stream may be connecting, and a stop the user confirmed
+        // must not be skipped on stale state. OBS answers OutputNotRunning (501) when it really is off.
         private static StreamResult StopMain(ObsClient obs, StreamTarget t)
         {
-            if (t.Active == false) return new StreamResult { Key = t.Key, Ok = true, Message = "Already off" };
             try { obs.Request("StopStream"); return new StreamResult { Key = t.Key, Ok = true, Message = "Stopping" }; }
+            catch (ObsRequestException ex) when (ex.Code == 501) { return new StreamResult { Key = t.Key, Ok = true, Message = "Already off" }; }
             catch (Exception ex) { return new StreamResult { Key = t.Key, Ok = false, Message = Describe(ex) }; }
         }
 
@@ -170,7 +201,11 @@ namespace VSCView.Obs
                 {
                     obs.Request("TriggerHotkeyByName", new JObject { ["hotkeyName"] = (start ? MultiRtmpStart : MultiRtmpStop) + t.Name });
                     // The plugin skips targets that are disabled in its dock, and reports nothing back.
-                    return new StreamResult { Key = t.Key, Ok = true, Message = start ? "Start sent (obs-multi-rtmp doesn't confirm)" : "Stop sent" };
+                    return new StreamResult
+                    {
+                        Key = t.Key, Ok = true,
+                        Message = start ? "Start sent; obs-multi-rtmp doesn't confirm, check the live count" : "Stop sent; obs-multi-rtmp doesn't confirm, check the live count",
+                    };
                 }
                 if (t.Kind == "aitum")
                 {
