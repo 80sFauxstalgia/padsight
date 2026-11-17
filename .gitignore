@@ -286,3 +286,9 @@ __pycache__/
 *.btm.cs
 *.odx.cs
 *.xsd.cs
+
+# SDL3 release downloaded at build time
+Deps/SDL3/
+
+# Release packages (tools/package.ps1)
+dist/

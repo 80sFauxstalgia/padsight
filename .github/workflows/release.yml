@@ -1,0 +1,144 @@
+# Release build: produces the Windows zip, SHA-256 checksums and (in public repos) a signed
+# SLSA build-provenance attestation.
+#
+# Triggers
+#   - push of a tag "v*"   -> builds and attaches everything to a DRAFT GitHub release
+#                             (drafts are not public; a maintainer publishes it by hand)
+#   - workflow_dispatch     -> dry run: builds and uploads a workflow artifact only
+#
+# Actions are pinned to full commit SHAs (tag in the trailing comment).
+name: Release build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write          # only used by the draft-release step on tag pushes
+      id-token: write          # attestation: mint the OIDC token for Sigstore
+      attestations: write      # attestation: store it on the repository
+      artifact-metadata: write # attestation: link it to the artifact
+    env:
+      DOTNET_NOLOGO: '1'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - name: Check out (with the ExtendInput submodule)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build (Release)
+        # Also downloads the official SDL3 release and verifies its pinned SHA-256 (see VSCView.csproj).
+        run: dotnet build VSCView.sln -c Release -nologo -v:minimal
+
+      # ------------------------------------------------------------------------------------------
+      # AUTHENTICODE SIGNING (Azure Artifact Signing, formerly "Trusted Signing") - DISABLED.
+      #
+      # Order matters: build -> SIGN -> package -> checksum -> attest, so the zip, its SHA-256 and the
+      # provenance attestation all cover the signed binaries. Only our own binaries are signed;
+      # third-party DLLs (SDL3, Flee, HidSharp, ...) ship as their publishers built them.
+      #
+      # To turn it on, once the Artifact Signing account and the Talaria Software LLC identity
+      # validation are complete:
+      #   1. Azure: create an app registration (or user-assigned managed identity) and give it the
+      #      "Artifact Signing Certificate Profile Signer" role on the certificate profile.
+      #   2. On that identity add a FEDERATED CREDENTIAL (OIDC) for this repository:
+      #        issuer  https://token.actions.githubusercontent.com
+      #        subject repo:80sFauxstalgia/vscview-overlay:ref:refs/tags/v*   (tags only; use an
+      #                environment-scoped subject instead if releases go through a GitHub environment)
+      #      Prefer this over a client secret: no long-lived secret is stored anywhere.
+      #   3. Repository SECRETS (Settings > Secrets and variables > Actions > Secrets):
+      #        AZURE_CLIENT_ID        - the app registration / managed identity client id
+      #        AZURE_TENANT_ID        - the Entra tenant id
+      #        AZURE_SUBSCRIPTION_ID  - the subscription holding the signing account
+      #   4. Repository VARIABLES (same page > Variables):
+      #        ARTIFACT_SIGNING_ENDPOINT  - regional endpoint, e.g. https://<region>.codesigning.azure.net/
+      #        ARTIFACT_SIGNING_ACCOUNT   - the Artifact Signing account name
+      #        ARTIFACT_SIGNING_PROFILE   - the certificate profile name
+      #   5. Change `if: ${{ false }}` on BOTH steps below to `if: ${{ startsWith(github.ref, 'refs/tags/v') }}`
+      #      and update the README's "Verify your download" note.
+      # The job already has `id-token: write`, which OIDC needs.
+      - name: Azure login for signing (OIDC) - disabled until configured
+        if: ${{ false }}
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign binaries (Azure Artifact Signing) - disabled until configured
+        if: ${{ false }}
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0 (formerly azure/trusted-signing-action)
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files: |
+            ${{ github.workspace }}\VSCView\bin\Release\net462\VSCView.exe
+            ${{ github.workspace }}\VSCView\bin\Release\net462\ThemeFixer.exe
+            ${{ github.workspace }}\VSCView\bin\Release\net462\ExtendInput.dll
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      # ------------------------------------------------------------------------------------------
+
+      - name: Package zip
+        shell: pwsh
+        run: ./tools/package.ps1 -NoBuild
+
+      - name: Write SHA256SUMS.txt
+        shell: pwsh
+        run: |
+          Set-Location dist
+          Get-ChildItem *.zip | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          } | Set-Content -Encoding ascii SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+
+      # Artifact attestations are only available for PUBLIC repositories on GitHub Free/Pro/Team
+      # (private repositories need Enterprise Cloud), so this step is skipped while the repo is private.
+      - name: Attest build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2 (successor of attest-build-provenance)
+        with:
+          subject-path: 'dist/*.zip'
+
+      - name: Note skipped attestation (private repository)
+        if: ${{ github.event.repository.private }}
+        run: echo "::notice title=Attestation skipped::Build provenance attestations need a public repository on this plan; skipped while the repository is private."
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vscview-release
+          path: |
+            dist/*.zip
+            dist/*.sha256
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Create DRAFT release (tag pushes only)
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = @(Get-ChildItem dist/*.zip, dist/*.sha256, dist/SHA256SUMS.txt | ForEach-Object FullName)
+          gh release create "$env:GITHUB_REF_NAME" --draft --verify-tag --title "VSCView $env:GITHUB_REF_NAME" --notes "Draft created by the release workflow. Review before publishing." @files

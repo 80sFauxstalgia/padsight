@@ -47,6 +47,10 @@ namespace VSCView
 
         IconImageManager IconManager;
 
+        Web.OverlayHub overlayHub;
+        string currentThemeFile;
+        public const int DefaultOverlayPort = 47817;
+
         public MainForm(int instanceNumber = 0)
         {
             InitializeComponent();
@@ -65,6 +69,7 @@ namespace VSCView
             DeviceManager = new DeviceManager();
 
             ControllerData = new ControllerData();
+            overlayHub = new Web.OverlayHub(ControllerData);
             state = new ControllerState();
             // 5s lookback for smoothing
             sensorData = new SensorCollector(5, true);
@@ -78,6 +83,8 @@ namespace VSCView
 
             LoadThemes();
             LoadSettings();
+            overlayHub.DefaultFps = settings.OverlayFps ?? 60;
+            AddOverlayMenu();
             if (File.Exists("ctrl.last"))
             {
                 settings.Theme = File.ReadAllText("ctrl.last");
@@ -135,8 +142,314 @@ namespace VSCView
         /// <param name="e"></param>
         private void MainForm_Load(object sender, EventArgs e)
         {
+            if (settings.OverlayEnabled ?? true)
+                StartOverlayServer();
             LoadControllers(true);
         }
+
+        #region OBS Browser Source
+        ToolStripMenuItem tsmiOverlay;
+        ToolStripMenuItem tsmiOverlayEnabled;
+
+        private int OverlayPort => (settings.OverlayPort ?? DefaultOverlayPort) + instanceNumber;
+
+        private void StartOverlayServer()
+        {
+            if (!overlayHub.Start(OverlayPort))
+                MessageBox.Show(this, overlayHub.Error, "OBS Browser Source", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            UpdateOverlayMenu();
+        }
+
+        private void AddOverlayMenu()
+        {
+            tsmiOverlay = new ToolStripMenuItem("OBS Browser Source");
+            tsmiOverlayEnabled = new ToolStripMenuItem("Enabled", null, (s, e) =>
+            {
+                settings.OverlayEnabled = !(settings.OverlayEnabled ?? true);
+                SaveSettings();
+                if (settings.OverlayEnabled ?? true) StartOverlayServer();
+                else { overlayHub.Dispose(); overlayHub = new Web.OverlayHub(ControllerData) { DefaultFps = settings.OverlayFps ?? 60 }; if (currentThemeFile != null) overlayHub.SetMainTheme(currentThemeFile); }
+                UpdateOverlayMenu();
+            });
+            tsmiOverlay.DropDownItems.Add(new ToolStripMenuItem("Copy URL (follows window theme)", null, (s, e) => CopyText(overlayHub.Url)));
+            tsmiOverlay.DropDownItems.Add(new ToolStripMenuItem("Copy URL (pinned to current theme)", null, (s, e) => CopyText(overlayHub.UrlForTheme(currentThemeFile))));
+            tsmiOverlay.DropDownItems.Add(new ToolStripMenuItem("Open in browser", null, (s, e) => { try { Process.Start(overlayHub.Url); } catch { } }));
+            tsmiOverlay.DropDownItems.Add(new ToolStripMenuItem("Status...", null, (s, e) =>
+                MessageBox.Show(this, OverlayStatusText(),
+                    "OBS Browser Source", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+            tsmiOverlay.DropDownItems.Add(new ToolStripSeparator());
+            tsmiOverlay.DropDownItems.Add(tsmiOverlayEnabled);
+            cmsMain.Items.Insert(cmsMain.Items.IndexOf(tsmiController) + 1, tsmiOverlay);
+            cmsMain.Items.Insert(0, new ToolStripMenuItem("Theme &Browser...", null, (s, e) => ShowThemeBrowser()));
+            cmsMain.Items.Insert(cmsMain.Items.IndexOf(tsmiOverlay) + 1, new ToolStripMenuItem("&Settings...", null, (s, e) => ShowSettings()));
+            UpdateOverlayMenu();
+
+            followTimer = new System.Windows.Forms.Timer { Interval = 100 };
+            followTimer.Tick += (s, e) => FollowTick();
+            followTimer.Start();
+        }
+
+        private void UpdateOverlayMenu()
+        {
+            if (tsmiOverlayEnabled == null) return;
+            tsmiOverlayEnabled.Checked = settings.OverlayEnabled ?? true;
+            tsmiOverlay.ToolTipText = overlayHub.IsRunning ? overlayHub.Url : "Overlay server is off";
+        }
+
+        private void CopyText(string text)
+        {
+            try { Clipboard.SetText(text); } catch { }
+        }
+        #endregion OBS Browser Source
+
+        #region Settings, theme browser, per-controller themes, follow mode
+        /// <summary>Load a theme chosen by the user and report failures instead of dropping them.</summary>
+        private async void LoadThemeSafe(string file)
+        {
+            try { await LoadTheme(file, false); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Could not load the theme\n{file}\n\n{ex.Message}", "Theme", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void ShowThemeBrowser()
+        {
+            var form = new UiForms.ThemePickerForm(currentThemeFile,
+                file => LoadThemeSafe(file),
+                file => overlayHub.UrlForTheme(file));
+            form.Show(this);
+        }
+
+        private void ShowSettings()
+        {
+            var values = new UiForms.SettingsValues
+            {
+                OverlayEnabled = settings.OverlayEnabled ?? true,
+                OverlayPort = settings.OverlayPort ?? DefaultOverlayPort,
+                PortOffset = instanceNumber,
+                OverlayFps = settings.OverlayFps ?? 60,
+                AutoSelectOnlyController = settings.AutoSelectOnlyController,
+                FollowActiveController = settings.FollowActiveController ?? true,
+                RememberThemePerController = settings.RememberThemePerController ?? true,
+                Background = this.BackColor,
+            };
+            using (var dlg = new UiForms.SettingsForm(values, OverlayStatusText))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            }
+            bool restart = values.OverlayEnabled != (settings.OverlayEnabled ?? true)
+                        || values.OverlayPort != (settings.OverlayPort ?? DefaultOverlayPort)
+                        || values.OverlayFps != (settings.OverlayFps ?? 60);
+            settings.OverlayEnabled = values.OverlayEnabled;
+            settings.OverlayPort = values.OverlayPort;
+            settings.OverlayFps = values.OverlayFps;
+            settings.AutoSelectOnlyController = values.AutoSelectOnlyController;
+            tsmiAutoSelectOnlyController.Checked = values.AutoSelectOnlyController;
+            settings.FollowActiveController = values.FollowActiveController;
+            settings.RememberThemePerController = values.RememberThemePerController;
+            this.BackColor = values.Background;
+            settings.Background = ColorTranslator.ToHtml(this.BackColor);
+            SaveSettings();
+
+            if (restart)
+            {
+                overlayHub.Dispose();
+                overlayHub = new Web.OverlayHub(ControllerData) { DefaultFps = settings.OverlayFps ?? 60 };
+                if (currentThemeFile != null) overlayHub.SetMainTheme(currentThemeFile);
+                if (settings.OverlayEnabled ?? true) StartOverlayServer();
+            }
+            UpdateOverlayMenu();
+            AutoLoadController();
+        }
+
+        private string OverlayStatusText()
+        {
+            string s = overlayHub.IsRunning ? $"Serving {overlayHub.Url}" : ("Server off" + (string.IsNullOrEmpty(overlayHub.Error) ? "" : ": " + overlayHub.Error));
+            string stats = overlayHub.StatsText().Trim();
+            if (stats.Length > 0) s += Environment.NewLine + stats;
+            s += Environment.NewLine + "2026 Steam Controller (SDL3): " + (DeviceManager.SdlStatus ?? "not started");
+            return s;
+        }
+
+        /// <summary>Key used to remember a theme per kind of controller (e.g. DEVICE_SC, DEVICE_SC2026).</summary>
+        private static string ControllerKind(IController c) =>
+            c?.ControllerTypeCode?.FirstOrDefault(t => t != "DEVICE_NONE");
+
+        private void RememberThemeForActiveController(string themeFile)
+        {
+            string kind = ControllerKind(ActiveController);
+            if (kind == null || themeFile == null) return;
+            if (settings.ThemeByController == null) settings.ThemeByController = new Dictionary<string, string>();
+            settings.ThemeByController[kind] = themeFile;
+        }
+
+        private void ApplyRememberedTheme()
+        {
+            if (!(settings.RememberThemePerController ?? true)) return;
+            string kind = ControllerKind(ActiveController);
+            if (kind == null || settings.ThemeByController == null) return;
+            if (!settings.ThemeByController.TryGetValue(kind, out string file) || !File.Exists(file)) return;
+            if (currentThemeFile != null && Path.GetFullPath(file).Equals(Path.GetFullPath(currentThemeFile), StringComparison.OrdinalIgnoreCase)) return;
+            if (InvokeRequired) BeginInvoke(new Action(() => LoadThemeSafe(file)));
+            else LoadThemeSafe(file);
+        }
+
+        System.Windows.Forms.Timer followTimer;
+        readonly HashSet<IController> followReading = new HashSet<IController>();
+        readonly Dictionary<IController, DateTime> lastUsed = new Dictionary<IController, DateTime>();
+
+        /// <summary>
+        /// Follow mode: keep every connected controller reading and switch the window (and so every OBS source)
+        /// to whichever one is being used. The current controller must be idle for 2 s before a switch, so
+        /// holding one controller while the other sits on the desk doesn't flap.
+        /// </summary>
+        private void FollowTick()
+        {
+            UpdateStatusSnapshot();
+            if (!(settings.FollowActiveController ?? true)) return;
+
+            // UI thread only (see PostToUi), so no lock is needed.
+            List<IController> present = ControllerMemoHack.Values.Select(v => v.Item1).Where(c => c.IsPresent).ToList();
+            // XInput slots include Steam's virtual Xbox pads, which mirror whatever real controller is in use, so
+            // they would always "win". Ignore them whenever a controller with its own driver is connected.
+            if (present.Any(c => !(c is XInputController)))
+                present = present.Where(c => !(c is XInputController)).ToList();
+            if (present.Count < 2) return; // nothing to follow
+
+            DateTime now = DateTime.UtcNow;
+            foreach (IController c in present)
+            {
+                if (!followReading.Contains(c) && c != ActiveController)
+                {
+                    try { c.Initalize(); followReading.Add(c); } catch { }
+                }
+                ControllerState st = null;
+                try { st = c.GetState(); } catch { }
+                if (IsInUse(st)) lastUsed[c] = now;
+            }
+
+            IController candidate = present.Where(c => c != ActiveController && lastUsed.ContainsKey(c))
+                                           .OrderByDescending(c => lastUsed[c]).FirstOrDefault();
+            if (candidate == null || (now - lastUsed[candidate]).TotalMilliseconds > 300) return;
+
+            DateTime activeLast = (ActiveController != null && lastUsed.TryGetValue(ActiveController, out var t)) ? t : DateTime.MinValue;
+            if (ActiveController != null && ActiveController.IsPresent && (now - activeLast).TotalSeconds < 2) return;
+
+            ActivateController(candidate, deinitializePrevious: false);
+        }
+
+        private volatile string statusSnapshot = "{}";
+
+        /// <summary>
+        /// UI thread: build the JSON served at /status.json (controllers, SDL, channels, live inputs of the
+        /// active controller). Built here so the server thread never touches UI-thread state.
+        /// </summary>
+        private void UpdateStatusSnapshot()
+        {
+            try
+            {
+                var controllers = ControllerMemoHack.Values.Select(v => v.Item1).Select(c => new
+                {
+                    name = c.Name,
+                    kind = ControllerKind(c),
+                    present = c.IsPresent,
+                    active = c == ActiveController,
+                    reading = c == ActiveController || followReading.Contains(c),
+                    inputs = (c == ActiveController || followReading.Contains(c)) ? DescribeInputs(SafeState(c)) : null,
+                }).ToList();
+                var snap = new
+                {
+                    app = "VSCView",
+                    theme = currentThemeFile,
+                    followMode = settings.FollowActiveController ?? true,
+                    sdl = DeviceManager.SdlStatus,
+                    overlay = overlayHub.IsRunning ? overlayHub.Url : null,
+                    controllers,
+                    channels = overlayHub.ChannelStats(),
+                };
+                statusSnapshot = JsonConvert.SerializeObject(snap);
+                overlayHub.StatusJson = () => statusSnapshot;
+            }
+            catch (Exception ex) { Debug.WriteLine("status: " + ex.Message); }
+        }
+
+        private static ControllerState SafeState(IController c)
+        {
+            try { return c.GetState(); } catch { return null; }
+        }
+
+        /// <summary>Active inputs as "control:key=value" strings (for diagnostics).</summary>
+        private static List<string> DescribeInputs(ControllerState s)
+        {
+            var list = new List<string>();
+            if (s?.Controls == null) return list;
+            foreach (string k in s.Controls.Keys)
+            {
+                switch (s.Controls[k])
+                {
+                    case ControlButton b: if (b.Button0) list.Add(k); break;
+                    case ControlButtonPair p: if (p.Left.Button0) list.Add(k + ":l"); if (p.Right.Button0) list.Add(k + ":r"); break;
+                    case ControlButtonQuad q:
+                        if (q.ButtonN) list.Add(k + ":n"); if (q.ButtonE) list.Add(k + ":e");
+                        if (q.ButtonS) list.Add(k + ":s"); if (q.ButtonW) list.Add(k + ":w"); break;
+                    case ControlDPad d: if (d.Direction != EDPadDirection.None) list.Add(k + "=" + d.Direction); break;
+                    case ControlTriggerPair tr:
+                        if (tr.Left.Analog > 0.02f || tr.Left.Stage2) list.Add($"{k}:l={tr.Left.Analog:0.00}{(tr.Left.Stage2 ? "+stage2" : "")}");
+                        if (tr.Right.Analog > 0.02f || tr.Right.Stage2) list.Add($"{k}:r={tr.Right.Analog:0.00}{(tr.Right.Stage2 ? "+stage2" : "")}");
+                        break;
+                    case ControlStick st:
+                        if (st.Click || Math.Abs(st.X) > 0.08f || Math.Abs(st.Y) > 0.08f)
+                            list.Add($"{k}=({st.X:0.00},{st.Y:0.00}){(st.Click ? "+click" : "")}");
+                        break;
+                    case ControlTouch tc:
+                        for (int i = 0; i < tc.TouchCount; i++)
+                            if (tc.Touch[i]) list.Add($"{k}:{i}=({tc.X[i]:0.00},{tc.Y[i]:0.00})");
+                        if (tc.Click) list.Add(k + ":click");
+                        break;
+                    case Input.ControlTouchPressure tp:
+                        if (tp.Touch) list.Add($"{k}=({tp.X:0.00},{tp.Y:0.00}) p={tp.Pressure:0.00}");
+                        if (tp.Click) list.Add(k + ":click");
+                        break;
+                }
+            }
+            return list;
+        }
+
+        private static bool IsInUse(ControllerState s)
+        {
+            if (s?.Controls == null) return false;
+            foreach (string k in s.Controls.Keys)
+            {
+                switch (s.Controls[k])
+                {
+                    case ControlButton b: if (b.Button0) return true; break;
+                    case ControlButtonPair p: if (p.Left.Button0 || p.Right.Button0) return true; break;
+                    case ControlButtonQuad q: if (q.ButtonN || q.ButtonE || q.ButtonS || q.ButtonW) return true; break;
+                    case ControlDPad d: if (d.Direction != EDPadDirection.None) return true; break;
+                    case ControlTriggerPair tr: if (tr.Left.Analog > 0.25f || tr.Right.Analog > 0.25f || tr.Left.Stage2 || tr.Right.Stage2) return true; break;
+                    case ControlStick st: if (st.Click || Math.Abs(st.X) > 0.4f || Math.Abs(st.Y) > 0.4f) return true; break;
+                    case ControlTouch tc: if (tc.Click || tc.Touch.Any(x => x)) return true; break;
+                    case Input.ControlTouchPressure tp: if (tp.Click || tp.Touch) return true; break;
+                }
+            }
+            return false;
+        }
+
+        private void ActivateController(IController controller, bool deinitializePrevious)
+        {
+            if (controller == null || controller == ActiveController) return;
+            if (deinitializePrevious && !followReading.Contains(ActiveController)) ActiveController?.DeInitalize();
+            ActiveController = controller;
+            ControllerData.SetController(ActiveController);
+            if (ActiveController is SteamController sc)
+                sc.EnableMotion = settings.HackScMotionOn;
+            ActiveController.Initalize();
+            ui?.InitalizeController();
+            overlayHub?.ControllerChanged();
+            ApplyRememberedTheme();
+        }
+        #endregion
 
         #region Resizeing
         private const int HTLEFT = 10;
@@ -204,18 +517,20 @@ namespace VSCView
             }
         }
 
+        private string settingsFile;
         private void LoadSettings()
         {
             string filename = "settings.json";
             if (instanceNumber > 0)
                 filename = $"settings.{instanceNumber}.json";
 
-            if (!File.Exists("settings.json")) File.Create("settings.json").Close();
-            settings = JsonConvert.DeserializeObject<Settings>(File.ReadAllText("settings.json")) ?? new Settings();
+            settingsFile = filename;
+            if (!File.Exists(filename)) File.Create(filename).Close();
+            settings = JsonConvert.DeserializeObject<Settings>(File.ReadAllText(filename)) ?? new Settings();
         }
         private void SaveSettings()
         {
-            File.WriteAllText("settings.json", JsonConvert.SerializeObject(settings));
+            File.WriteAllText(settingsFile ?? "settings.json", JsonConvert.SerializeObject(settings));
         }
         private void LoadThemes()
         {
@@ -308,11 +623,25 @@ namespace VSCView
         }
 
         Dictionary<string, (IController, ToolStripItem)> ControllerMemoHack = new Dictionary<string, (IController, ToolStripItem)>();
+        // Device events arrive on HID/SDL threads. Everything that touches ControllerMemoHack, the menu or the
+        // active controller is marshalled to the UI thread with BeginInvoke (never a blocking Invoke while
+        // holding a lock), so the UI thread is the only one that reads or writes that state.
+        private void PostToUi(MethodInvoker action)
+        {
+            try
+            {
+                if (this.IsDisposed || this.Disposing) return;
+                if (this.IsHandleCreated) this.BeginInvoke(action);
+                else action();
+            }
+            catch (ObjectDisposedException) { /* exiting */ }
+            catch (InvalidOperationException) { /* handle torn down while exiting */ }
+        }
+
         private void DeviceManager_ControllerAdded(object sender, IController controller)
         {
-            lock (ControllerMemoHack)
             {
-                this.Invoke((MethodInvoker)delegate
+                PostToUi(delegate
                 {
                     string NiceName = controller.Name;
                     {
@@ -358,9 +687,9 @@ namespace VSCView
                     // load the first controller in the list if it exists
                     //if (firstload && i == 0 && Controllers[i] != null)
                     //    LoadController(Controllers[i], null);
+                    AutoLoadController();
                 });
             }
-            AutoLoadController();
         }
 
         private void UpdateIcon(ToolStripItem itm)
@@ -474,9 +803,8 @@ namespace VSCView
 
         private void DeviceManager_ControllerRemoved(object sender, ExtendInput.DeviceProvider.IDevice e)
         {
-            lock(ControllerMemoHack)
             {
-                this.Invoke((MethodInvoker)delegate
+                PostToUi(delegate
                 {
                     if (ControllerMemoHack.ContainsKey(e.UniqueKey))
                     {
@@ -485,18 +813,20 @@ namespace VSCView
                         RemovedController.Dispose();
                         tsmiController.DropDownItems.Remove(ControllerMemoHack[e.UniqueKey].Item2);
                         ControllerMemoHack.Remove(e.UniqueKey);
+                        followReading.Remove(RemovedController);
+                        lastUsed.Remove(RemovedController);
                         if (ActiveController == RemovedController)
                             ActiveController = null;
                     }
+                    AutoLoadController();
                 });
             }
-            AutoLoadController();
         }
 
         private void LoadController(object sender, EventArgs e)
         {
             if (ActiveController != null)
-                ActiveController.DeInitalize();
+                { ActiveController.DeInitalize(); followReading.Remove(ActiveController); }
 
             // differentiate between context selection and startup
             if (sender is ToolStripItem)
@@ -518,6 +848,8 @@ namespace VSCView
             }).Start();
 
             ui?.InitalizeController();
+            overlayHub?.ControllerChanged();
+            ApplyRememberedTheme();
         }
 
         private void AutoLoadController()
@@ -550,7 +882,7 @@ namespace VSCView
             if (FirstActiveController == ActiveController)
                 return;
 
-            ActiveController?.DeInitalize();
+            if (ActiveController != null) { ActiveController.DeInitalize(); followReading.Remove(ActiveController); }
             ActiveController = null;
 
             if (FirstActiveController == null)
@@ -570,6 +902,8 @@ namespace VSCView
                 }).Start();
 
             ui?.InitalizeController();
+            overlayHub?.ControllerChanged();
+            ApplyRememberedTheme();
             FirstControllerActivation = false;
         }
 
@@ -590,7 +924,11 @@ namespace VSCView
                 skinJson = JsonConvert.SerializeObject(ui, Formatting.Indented);
             }
 
+            UI oldUi = ui;
             ui = new UI(ControllerData, Path.GetDirectoryName(path), skinJson);
+            oldUi?.Dispose(); // UI thread only; OnPaint also runs here, so nothing else is using it
+            currentThemeFile = path;
+            try { overlayHub?.SetMainTheme(path); } catch (Exception ex) { Debug.WriteLine("Overlay theme: " + ex); }
             if (!settings.CustomSize)
             {
                 this.Width = ui.Width;
@@ -600,12 +938,14 @@ namespace VSCView
             if (!initialLoad)
             {
                 settings.Theme = path;
+                RememberThemeForActiveController(path);
                 SaveSettings();
             }
 
             lblHint1.Hide();
             lblHint2.Hide();
 
+            ttimer?.Dispose();
             ttimer = new System.Threading.Timer(new TimerCallback(Render), null, 0, frameTime);
         }
 
@@ -679,6 +1019,8 @@ namespace VSCView
         private void MainForm_FormClosed(object sender, FormClosedEventArgs e)
         {
             ttimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            overlayHub?.Dispose();
+            DeviceManager.Shutdown();
             ControllerMemoHack?.ToList()?.ForEach(dr =>
             {
                 dr.Value.Item1.DeInitalize();

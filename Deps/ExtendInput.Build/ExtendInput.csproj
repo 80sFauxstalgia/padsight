@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    SDK-style build wrapper for the ExtendInput submodule (Deps/ExtendInput).
+    It compiles the submodule's sources unchanged so the whole solution builds
+    with `dotnet build`, without editing the upstream submodule's legacy csproj.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net462</TargetFramework>
+    <AssemblyName>ExtendInput</AssemblyName>
+    <RootNamespace>ExtendInput</RootNamespace>
+    <LangVersion>13</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Nullable>disable</Nullable>
+    <NoWarn>$(NoWarn);CS0168;CS0169;CS0219;CS0414;CS0649;CS0162;CS0067;CS1998;CS4014;CS0618</NoWarn>
+    <ExtendInputSrc>$(MSBuildThisFileDirectory)..\ExtendInput\ExtendInput\ExtendInput\</ExtendInputSrc>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(ExtendInputSrc)**\*.cs" Exclude="$(ExtendInputSrc)bin\**;$(ExtendInputSrc)obj\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="HidSharp" Version="2.1.0" />
+    <PackageReference Include="Microsoft.Win32.Registry" Version="4.7.0" />
+    <PackageReference Include="NAudio" Version="1.10.0" />
+    <PackageReference Include="SharpDX" Version="4.2.0" />
+    <PackageReference Include="SharpDX.XInput" Version="4.2.0" />
+    <PackageReference Include="System.Security.AccessControl" Version="4.7.0" />
+    <PackageReference Include="System.Security.Principal.Windows" Version="4.7.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+</Project>

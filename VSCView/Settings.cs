@@ -19,5 +19,15 @@ namespace VSCView
 
 
         public bool HackScMotionOn { get; set; }
+
+        // OBS Browser Source (local overlay server on 127.0.0.1)
+        public bool? OverlayEnabled { get; set; }
+        public int? OverlayPort { get; set; }
+        public int? OverlayFps { get; set; }
+
+        // Controller handling
+        public bool? FollowActiveController { get; set; }
+        public bool? RememberThemePerController { get; set; }
+        public Dictionary<string, string> ThemeByController { get; set; }
     }
 }

@@ -10,6 +10,8 @@ namespace VSCView
     public class DeviceManager
     {
         private ExtendInput.DeviceManager deviceManager;
+        private Input.SdlGamepadManager sdlManager;
+        public string SdlStatus => sdlManager?.Status;
 
         public event ControllerChangeEventHandler ControllerAdded;
         public event DeviceChangeEventHandler ControllerRemoved;
@@ -19,6 +21,11 @@ namespace VSCView
             deviceManager = new ExtendInput.DeviceManager();
             deviceManager.ControllerAdded += OnControllerAdded;
             deviceManager.ControllerRemoved += OnControllerRemoved;
+
+            // 2026 Steam Controller via SDL3 (the 2015 controller stays on ExtendInput's HID path)
+            sdlManager = new Input.SdlGamepadManager();
+            sdlManager.ControllerAdded += OnControllerAdded;
+            sdlManager.ControllerRemoved += OnControllerRemoved;
         }
 
         private void OnControllerAdded(object sender, IController e)
@@ -36,6 +43,12 @@ namespace VSCView
         public void ScanNow()
         {
             deviceManager.ScanNow();
+            sdlManager.Start(); // no-op once running; SDL rescans on its own thread
+        }
+
+        public void Shutdown()
+        {
+            sdlManager?.Dispose();
         }
 
         public List<IDeviceProvider> GetManualDeviceProviders()

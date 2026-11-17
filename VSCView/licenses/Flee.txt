@@ -1,0 +1,7 @@
+Flee - Fast Lightweight Expression Evaluator, version 1.2.2 (NuGet package "Flee")
+Source: https://github.com/mparlak/Flee
+
+Flee is licensed under the GNU Lesser General Public License (LGPL), as stated in the
+project's README. VSCView uses the officially released assembly (Flee.Net45.dll) unmodified,
+as a separate, dynamically linked library. You may replace Flee.Net45.dll with another
+build of Flee, including one built from the source linked above.

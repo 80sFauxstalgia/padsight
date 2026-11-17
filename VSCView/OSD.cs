@@ -191,7 +191,14 @@ namespace VSCView
                 return;
 
             if (disposing)
-                cache.Clear();
+            {
+                lock (cache)
+                {
+                    foreach (Image img in cache.Values.Distinct())
+                        img?.Dispose();
+                    cache.Clear();
+                }
+            }
             disposed = true;
         }
 
@@ -211,8 +218,14 @@ namespace VSCView
             // load the image for the active theme
             string ImagePath = name.StartsWith("\\") ? Path.Combine("themes", name.Substring(1)) : Path.Combine(themePath, name);
 
-            // this will throw an exception if the file or path doesn't exist
-            return Image.FromFile(ImagePath);
+            // Cached per UI (disposed with it) and copied into memory so the file isn't kept locked.
+            // This will throw if the file or path doesn't exist.
+            return GetImage("file:" + Path.GetFullPath(ImagePath), () =>
+            {
+                using (var fs = File.OpenRead(ImagePath))
+                using (var img = Image.FromStream(fs))
+                    return new Bitmap(img);
+            });
         }
 
         public static Image SetImageOpacity(Image image, float opacity)
