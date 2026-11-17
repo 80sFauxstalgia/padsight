@@ -272,6 +272,58 @@ check('a stream key with a trailing newline is refused', code == 400, (code, r))
 code, r = api('obs/streams/prefs', {'targets': {'main': {'label': 'a' + chr(0x7F) + 'b'}}})
 check('a label with DEL is refused', code == 400, (code, r))
 
+# 7i. text from OBS and plugins is filtered before it is shown (round 5)
+control('/reset')
+wait_connected()
+control('/startmode?m=hostile')
+code, r = api('obs/streams/action', {'op': 'start', 'targets': ['main'], 'confirm': True})
+msg = r['results'][0]['message'] if code == 200 else ''
+check('an OBS error comment with a bidi override or line break is not shown', msg == 'reason not shown', r)
+control('/startmode?m=long')
+code, r = api('obs/streams/action', {'op': 'start', 'targets': ['main'], 'confirm': True})
+msg = r['results'][0]['message'] if code == 200 else ''
+check('a long OBS error comment is capped', 0 < len(msg) <= 203 and msg.endswith('...'), len(msg))
+control('/startmode?m=ok')
+api('obs/streams/action', {'op': 'start', 'targets': ['aitum:Kick'], 'confirm': True})
+control('/aitummode?m=ok&refuse=1&answer=hostile')
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['aitum:Kick'], 'confirm': True})
+msg = r['results'][0]['message'] if code == 200 else ''
+check('a hostile Aitum refusal is not shown', msg == 'Aitum refused: reason not shown', r)
+control('/aitummode?m=ok&refuse=0&answer=plain')
+api('obs/streams/action', {'op': 'stop', 'targets': ['aitum:Kick'], 'confirm': True})
+
+# 7j. without OBS's output list the states are unknown, never "off"
+control('/outputlist?fail=1')
+code, r, t = streams()
+check('without the output list Aitum states are unknown', code == 200 and r['outputListOk'] is False and t['aitum:Kick']['active'] is None, (r.get('outputListOk'), t.get('aitum:Kick')))
+control('/aitummode?m=ok&refuse=1&answer=notactive')
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['aitum:Kick'], 'confirm': True})
+res = r['results'][0] if code == 200 else {}
+check('a "not active" refusal is not read as already off when the state is unknown', res.get('ok') is False, r)
+control('/aitummode?m=ok&refuse=0&answer=plain')
+control('/outputlist?fail=0')
+
+# 7k. OBS's own "Already off" stays on the status line
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['main'], 'confirm': True})
+res = r['results'][0] if code == 200 else {}
+check('OBS stream already off is flagged for the status line', res.get('message') == 'Already off' and res.get('notice') is True, r)
+
+# 7l. a slow OBS: the first timeout skips the rest, and a stop never turns into a 500
+api('obs/streams/action', {'op': 'start', 'targets': ['main'], 'confirm': True})
+control('/hang?type=TriggerHotkeyByName')
+t0 = time.time()
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['mrtmp:1001', 'mrtmp:1002', 'main'], 'confirm': True})
+took = time.time() - t0
+res = {x['key']: x for x in r.get('results', [])}
+check('after one timeout the rest is skipped, not waited for', code == 200 and took < 13 and res.get('mrtmp:1002', {}).get('message') == "Skipped: OBS isn't answering", (round(took, 1), r))
+control('/hang')
+control('/hang?type=GetStreamStatus')
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['main'], 'confirm': True})
+check('a stop still runs when OBS doesn\'t answer its status request', code == 200 and r['results'][0]['ok'] is True, (code, r))
+code, r = api('obs/streams')
+check('the stream list reports a slow OBS instead of failing', code == 200 and r.get('obsSlow') is True, (code, r.get('obsSlow')))
+control('/hang')
+
 # 8. labels, types and combinations
 code, r = api('obs/streams/prefs', {'targets': {'main': {'label': 'Main', 'type': 'Twitch'}, 'mrtmp:1001': {'label': 'Second', 'type': 'YouTube'}},
                                     'combos': {'Weekend': ['main', 'mrtmp:1001']}})

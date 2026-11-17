@@ -308,6 +308,7 @@ namespace VSCView
             {
                 targets = d.Targets.Select(t => new { key = t.Key, kind = t.Kind, name = t.Name, active = t.Active, note = t.Note }),
                 multiRtmp = d.MultiRtmp, multiRtmpActive = d.MultiRtmpActive, aitum = d.Aitum,
+                outputListOk = d.OutputListOk, obsSlow = d.ObsSlow,
                 version = obs.StreamsVersion,
                 saved = StreamPrefsView(),
             }));
@@ -327,7 +328,10 @@ namespace VSCView
                 return ApiResponse.Error(400, "Choose at least one stream");
             var keys = arr.Select(x => (string)x).Distinct().ToList();
             if (keys.Any(k => !StreamKeyRx.IsMatch(k))) return ApiResponse.Error(400, "Unknown stream key");
-            if (!streamOpLock.Wait(30000)) return ApiResponse.Error(409, "Another start or stop is still running. Try again in a moment.");
+            // A Stop waits longer than the worst-case Start (discovery and every OBS call are time-bounded, about 60 s
+            // at most), so a confirmed Stop queued behind a slow Start still runs instead of being refused.
+            if (!streamOpLock.Wait(op == "stop" ? 90000 : 30000))
+                return ApiResponse.Error(409, "Another start or stop is still running. Try again in a moment.");
             var results = new List<StreamResult>();
             try
             {

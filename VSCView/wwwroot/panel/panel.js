@@ -415,7 +415,7 @@
           </section>
         </div>
         <section class="card hud" aria-label="Streams" id="obsStreams">
-          <div class="row spread"><h2 class="label">Streams</h2><button class="btn small" type="button" data-act="streams-refresh">Refresh</button></div>
+          <div class="row spread"><h2 class="label" tabindex="-1">Streams</h2><button class="btn small" type="button" data-act="streams-refresh">Refresh</button></div>
           <p class="sub">Start and stop OBS's own stream and your multistream targets (obs-multi-rtmp, Aitum Multistream). Name each one and give it a type to start or stop a whole type at once. Every start and stop asks you first.</p>
           <div class="row" id="streamBulk"></div>
           <p class="small" id="streamBusy" role="status" aria-live="polite"></p>
@@ -521,11 +521,15 @@
   }
   const streamNames = keys => keys.map(k => { const t = streams.targets.find(x => x.key === k); return t ? streamLabel(t) : k; });
 
+  const KIND_LABEL = { main: 'OBS', mrtmp: 'obs-multi-rtmp', aitum: 'Aitum' };
   function rowStatus(t) {
-    if (streamsError) return '<span class="tag stale">UNKNOWN</span>';
+    if (streamsError) return '<span class="tag unknown" title="OBS can’t be reached right now">UNKNOWN</span>';
     if (t.active === true) return '<span class="tag ok">LIVE</span>';
-    if (t.active === false) return '<span class="tag">OFF</span>';
-    return '<span class="tag warn" title="obs-multi-rtmp doesn’t report each target’s state">STATE UNKNOWN</span>';
+    if (t.active === false) return '<span class="tag off">OFF</span>';
+    const why = t.kind === 'mrtmp' ? 'obs-multi-rtmp doesn’t report each target’s state'
+      : t.kind === 'aitum' ? 'OBS’s output list didn’t answer, so this output’s state is unknown'
+      : 'OBS didn’t answer, so the state is unknown';
+    return `<span class="tag unknown" title="${why}">STATE UNKNOWN</span>`;
   }
 
   // Only the parts that change with OBS's state: used while the user types in a name field, so typing is never lost.
@@ -540,12 +544,20 @@
     updateStreamLines();
   }
 
+  // Sets text only when it changed, so screen readers don't re-announce the same line on every poll.
+  function setText(el, text) { if (el && el.textContent !== text) el.textContent = text; }
   function updateStreamLines() {
     const m = streams ? streams.targets.filter(x => x.kind === 'mrtmp').length : 0;
-    $('#streamSummary').textContent = streamsError || (m ? `obs-multi-rtmp: ${streams.multiRtmpActive} of ${m} targets live (it doesn’t report which).` : '');
-    $('#streamSummary').className = 'small' + (streamsError ? ' warn-text' : '');
-    $('#streamBusy').textContent = [busyStart, busyStopText()].filter(Boolean).join(' · ');
-    $('#streamNotice').textContent = streamNotice || '';
+    let summary = '';
+    if (streamsError) summary = streamsError;
+    else if (streams && streams.obsSlow) summary = 'OBS is slow to answer, so some states are unknown. Refresh in a moment.';
+    else if (streams && !streams.outputListOk) summary = 'OBS’s output list didn’t answer, so live states are unknown.';
+    else if (m) summary = `obs-multi-rtmp: ${streams.multiRtmpActive} of ${m} targets live (it doesn’t report which).`;
+    setText($('#streamSummary'), summary);
+    const cls = 'small' + (streamsError || streams?.obsSlow || (streams && !streams.outputListOk) ? ' warn-text' : '');
+    if ($('#streamSummary').className !== cls) $('#streamSummary').className = cls;
+    setText($('#streamBusy'), [busyStart, busyStopText()].filter(Boolean).join(' · '));
+    setText($('#streamNotice'), streamNotice || '');
   }
   const startLocked = () => !!(busyStart || stopsRunning);
   const busyStopText = () => !stopsRunning ? null
@@ -587,8 +599,10 @@
     const notes = [];
     if (!streams.multiRtmp && !streams.aitum) notes.push('Only OBS’s own stream was found. Install obs-multi-rtmp (0.7.4.5 or newer) or Aitum Multistream to control extra streams.');
     if (streams.multiRtmp) notes.push('obs-multi-rtmp doesn’t report each target’s state, and it skips targets that are switched off in its dock.');
-    notes.push('Start order: OBS’s own stream first, then the others; if OBS’s stream doesn’t go live, nothing else starts. Stop order is the reverse. OBS may ask you to confirm a stop itself (stream delay, Aitum’s warning).');
-    $('#streamNote').textContent = notes.join(' ');
+    notes.push('Start: OBS’s own stream first, then the others. If OBS’s stream doesn’t go live, nothing else starts.');
+    notes.push('Stop: the others first, then OBS’s own stream.');
+    notes.push('OBS may ask you to confirm a stop itself (stream delay, Aitum’s warning).');
+    setText($('#streamNote'), notes.join('\n'));
     updateStreamLines();
   }
 
@@ -605,25 +619,42 @@
   }
 
   // In-page confirm dialog for the whole panel (window.confirm may be suppressed inside an OBS dock).
-  // Resolves true only on the OK button; Cancel, Escape and a click outside resolve false.
-  let confirmResolve = null, confirmOpenedAt = 0;
+  // Resolves true only on the OK button; Cancel, Escape and a click outside resolve false. Tab stays inside the dialog,
+  // and focus goes back to the control that opened it (found again after a redraw), else the Streams heading.
+  let confirmResolve = null, confirmOpenedAt = 0, confirmReturn = null;
+  function focusSelector(el) {
+    const d = el && el.dataset;
+    if (!d || !d.act) return el && el.id ? '#' + CSS.escape(el.id) : null;
+    let sel = `[data-act="${CSS.escape(d.act)}"]`;
+    for (const k of ['key', 'op', 'scope', 'name']) if (d[k] !== undefined) sel += `[data-${k}="${CSS.escape(d[k])}"]`;
+    return sel;
+  }
+  function restoreFocus(onlyIfLost) {
+    if (!confirmReturn || confirmResolve) return;
+    if (onlyIfLost && document.activeElement && document.activeElement !== document.body) return;
+    const el = (confirmReturn && $(confirmReturn)) || $('#obsStreams h2');
+    if (el) el.focus();
+  }
   function askConfirm({ title, items, note, okText, danger }) {
     let back = $('#confirmModal');
     if (!back) {
       back = document.createElement('div');
       back.id = 'confirmModal'; back.className = 'modal-back'; back.hidden = true;
-      back.innerHTML = '<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle"></div>';
+      back.innerHTML = '<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmList confirmNote"></div>';
       back.addEventListener('click', e => { if (e.target === back) closeConfirm(false); });
       document.body.appendChild(back);
     }
     if (confirmResolve) closeConfirm(false);
+    confirmReturn = focusSelector(document.activeElement);
     $('.modal', back).innerHTML = `<p id="confirmTitle"><b>${esc(title)}</b></p>
-      ${items && items.length ? `<ul>${items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-      ${note ? `<p class="small">${esc(note)}</p>` : ''}
+      ${items && items.length ? `<ul id="confirmList">${items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      ${note ? `<p class="small" id="confirmNote">${esc(note)}</p>` : ''}
       <div class="row"><button class="btn" type="button" data-act="confirm-no">Cancel</button>
-      <button class="btn ${danger ? 'danger' : 'primary'}" type="button" data-act="confirm-yes">${esc(okText)}</button></div>`;
+      <button class="btn ${danger ? 'danger' : 'primary'}" type="button" data-act="confirm-yes" aria-disabled="true">${esc(okText)}</button></div>`;
     back.hidden = false;
     confirmOpenedAt = Date.now();
+    // A double tap can't confirm: the OK button is inert, and shows it, for the first 300 ms.
+    setTimeout(() => { const y = $('[data-act="confirm-yes"]', back); if (y) y.removeAttribute('aria-disabled'); }, 300);
     $('[data-act="confirm-no"]', back).focus();
     return new Promise(res => { confirmResolve = res; });
   }
@@ -632,8 +663,19 @@
     if (back) { back.hidden = true; $('.modal', back).innerHTML = ''; }
     const r = confirmResolve; confirmResolve = null;
     if (r) r(answer);
+    setTimeout(() => restoreFocus(false), 0);
   }
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && confirmResolve) closeConfirm(false); });
+  document.addEventListener('keydown', e => {
+    if (!confirmResolve) return;
+    if (e.key === 'Escape') { closeConfirm(false); return; }
+    if (e.key === 'Tab') {
+      const f = $$('#confirmModal button');
+      if (!f.length) return;
+      e.preventDefault();
+      const i = f.indexOf(document.activeElement);
+      f[i < 0 ? 0 : (i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus();
+    }
+  });
 
   function setNotice(text) {
     streamNotice = text || null;
@@ -645,10 +687,11 @@
   async function streamAction(op, keys) {
     if (op === 'start' && startLocked()) return;   // a Stop is always allowed; the app runs it after any start
     if (!keys.length) { toast(op === 'start' ? 'Those streams are already live' : 'No streams to stop'); return; }
-    const names = streamNames(keys);
+    // Each item names its kind, so an Aitum output called "OBS stream" can't pass for OBS's own stream.
+    const items = keys.map(k => { const t = streams.targets.find(x => x.key === k); return t ? `${streamLabel(t)} (${KIND_LABEL[t.kind]})` : k; });
     const ok = await askConfirm(op === 'start'
-      ? { title: 'Go live on these streams?', items: names, note: 'This starts broadcasting publicly.', okText: 'Go live' }
-      : { title: 'Stop these streams?', items: names, note: 'This ends those broadcasts.', okText: 'Stop streams', danger: true });
+      ? { title: 'Start these streams?', items, note: 'This puts these streams live.', okText: 'Start now' }
+      : { title: 'Stop these streams?', items, note: 'This ends those broadcasts. Streams already off are skipped.', okText: 'Stop now', danger: true });
     if (!ok) return;
     const main = streams.targets.find(t => t.key === 'main');
     if (op === 'start') busyStart = keys.includes('main') && main?.active !== true ? 'Starting OBS stream, up to 15 s…' : 'Starting…';
@@ -668,6 +711,7 @@
     } finally {
       if (op === 'start') busyStart = null; else stopsRunning--;
       renderStreams();   // not forced: a name typed meanwhile survives (the in-place update refreshes buttons)
+      restoreFocus(true); // the redraw replaced the focused button: find it again
     }
     // OBS and the plugins settle over the next seconds (and a slow OBS stream may still go live): re-check for ~20 s.
     // Not forced, so a name being typed is never wiped; the list redraws when the state changes.
@@ -1070,7 +1114,7 @@
       await saveStreamPrefs(Object.assign({}, streams.saved.combos || {}, { [name]: keys }));
       $('#comboName').value = '';
     },
-    'confirm-yes': () => { if (Date.now() - confirmOpenedAt >= 300) closeConfirm(true); },  // a double tap can't confirm
+    'confirm-yes': b => { if (Date.now() - confirmOpenedAt >= 300 && !b.hasAttribute('aria-disabled')) closeConfirm(true); },  // a double tap can't confirm
     'confirm-no': () => closeConfirm(false),
     'combo-del': async b => {
       if (!await askConfirm({ title: `Delete the combination "${b.dataset.name}"?`, items: [], note: 'The streams themselves stay as they are.', okText: 'Delete' })) return;

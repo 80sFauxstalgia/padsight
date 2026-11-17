@@ -23,6 +23,8 @@ namespace VSCView.Obs
         public bool MultiRtmp { get; set; }        // obs-multi-rtmp hotkeys found
         public int MultiRtmpActive { get; set; }   // obs-multi-rtmp outputs running right now (not per target)
         public bool Aitum { get; set; }            // Aitum Multistream answered
+        public bool OutputListOk { get; set; }     // GetOutputList answered; without it, live states are unknown
+        public bool ObsSlow { get; set; }          // a request timed out, so the rest of discovery was skipped
     }
 
     public sealed class StreamResult
@@ -30,6 +32,7 @@ namespace VSCView.Obs
         public string Key { get; set; }
         public bool Ok { get; set; }
         public bool Notice { get; set; }  // ok, but worth keeping on the status line (e.g. "already off" from a refusal)
+        internal bool TimedOut { get; set; } // OBS didn't answer in time: the rest of the operation is skipped
         public string Message { get; set; }
     }
 
@@ -54,14 +57,20 @@ namespace VSCView.Obs
         {
             var d = new StreamDiscovery();
 
-            JObject st = obs.Request("GetStreamStatus");
-            bool reconnecting = (bool?)st["outputReconnecting"] ?? false;
-            d.Targets.Add(new StreamTarget
+            // Every request is guarded, and the first timeout ends discovery: a slow OBS must not make one call (and the
+            // stream-operation lock its caller holds) wait for a timeout per request.
+            bool? mainActive = null;
+            string mainNote = null;
+            try
             {
-                Key = "main", Kind = "main", Name = "OBS stream",
-                Active = (bool?)st["outputActive"] ?? false,
-                Note = reconnecting ? "Reconnecting" : null,
-            });
+                JObject st = obs.Request("GetStreamStatus");
+                mainActive = (bool?)st["outputActive"] ?? false;
+                if ((bool?)st["outputReconnecting"] ?? false) mainNote = "Reconnecting";
+            }
+            catch (TimeoutException) { d.ObsSlow = true; }
+            catch (Exception ex) { Debug.WriteLine("GetStreamStatus: " + ex.Message); }
+            d.Targets.Add(new StreamTarget { Key = "main", Kind = "main", Name = "OBS stream", Active = mainActive, Note = mainNote });
+            if (d.ObsSlow) return d;
 
             var activeOutputs = new HashSet<string>(StringComparer.Ordinal);
             try
@@ -73,7 +82,9 @@ namespace VSCView.Obs
                     activeOutputs.Add(name);
                     if (name == MultiRtmpOutputName) d.MultiRtmpActive++;
                 }
+                d.OutputListOk = true;
             }
+            catch (TimeoutException) { d.ObsSlow = true; return d; }
             catch (Exception ex) { Debug.WriteLine("GetOutputList: " + ex.Message); }
 
             // obs-multi-rtmp: one start hotkey per target, "obs-multi-rtmp.start.<id>" (start_all has no dot).
@@ -86,6 +97,7 @@ namespace VSCView.Obs
                 foreach (string id in ids)
                     Add(d, new StreamTarget { Key = "mrtmp:" + id, Kind = "mrtmp", Name = id, Active = null });
             }
+            catch (TimeoutException) { d.ObsSlow = true; return d; }
             catch (Exception ex) { Debug.WriteLine("GetHotkeyList: " + ex.Message); }
 
             // Aitum Multistream: answers its vendor request only when installed.
@@ -102,12 +114,14 @@ namespace VSCView.Obs
                     Add(d, new StreamTarget
                     {
                         Key = "aitum:" + name, Kind = "aitum", Name = name,
-                        Active = activeOutputs.Contains(AitumOutputPrefix + name),
+                        // Without OBS's output list the state is unknown, never "off".
+                        Active = d.OutputListOk ? activeOutputs.Contains(AitumOutputPrefix + name) : (bool?)null,
                         Note = o.Type == JTokenType.Object && ((bool?)o["vertical"] ?? false) ? "Vertical" : null,
                     });
                 }
             }
             catch (ObsRequestException) { } // vendor not installed
+            catch (TimeoutException) { d.ObsSlow = true; }
             catch (Exception ex) { Debug.WriteLine("Aitum get_outputs: " + ex.Message); }
 
             return d;
@@ -138,6 +152,22 @@ namespace VSCView.Obs
             (c >= '\u202A' && c <= '\u202E') || (c >= '\u2066' && c <= '\u2069') || c == '\u200E' || c == '\u200F' || c == '\u061C';
 
         public const string SkippedNotLive = "Skipped: OBS's own stream isn't live, so nothing else was started";
+        public const string SkippedSlow = "Skipped: OBS isn't answering";
+        public const string ReasonNotShown = "reason not shown";
+
+        /// <summary>
+        /// Every message that comes from OBS or a plugin (error comments, vendor reasons) passes here before it is shown:
+        /// text that isn't plain (controls, bidi overrides, line breaks) is replaced, not repaired, and long text is
+        /// capped at 200 characters without splitting a surrogate pair.
+        /// </summary>
+        internal static string SafeText(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "no reason given";
+            if (!IsPlainText(s)) return ReasonNotShown;
+            if (s.Length <= 200) return s;
+            int cut = char.IsHighSurrogate(s[199]) ? 199 : 200;
+            return s.Substring(0, cut) + "...";
+        }
 
         /// <summary>
         /// Start or stop the given targets. Start: OBS's own stream first (plugins that share its encoder need it live);
@@ -159,16 +189,22 @@ namespace VSCView.Obs
                 results.Add(r);
                 if (!r.Ok)
                 {
-                    results.AddRange(plugins.Select(t => new StreamResult { Key = t.Key, Ok = false, Message = SkippedNotLive }));
+                    string why = r.TimedOut ? SkippedSlow : SkippedNotLive;
+                    results.AddRange(plugins.Select(t => new StreamResult { Key = t.Key, Ok = false, Message = why }));
                     return results;
                 }
             }
+            bool slow = false;
             foreach (var t in plugins)
             {
-                results.Add(RunPlugin(obs, t, start));
-                Thread.Sleep(150); // let each plugin settle; avoids a burst of simultaneous connects
+                if (slow) { results.Add(new StreamResult { Key = t.Key, Ok = false, Message = SkippedSlow }); continue; }
+                StreamResult r = RunPlugin(obs, t, start);
+                results.Add(r);
+                slow = r.TimedOut;
+                if (!slow) Thread.Sleep(150); // let each plugin settle; avoids a burst of simultaneous connects
             }
-            if (!start && main != null) results.Add(StopMain(obs, main));
+            if (!start && main != null)
+                results.Add(slow ? new StreamResult { Key = main.Key, Ok = false, Message = SkippedSlow } : StopMain(obs, main));
             return results;
         }
 
@@ -190,7 +226,7 @@ namespace VSCView.Obs
                     Message = $"OBS hasn't confirmed it's live after {waitMs / 1000} s. It may still go live, so watch OBS; stop it there or here if you don't want it.",
                 };
             }
-            catch (Exception ex) { return new StreamResult { Key = t.Key, Ok = false, Message = Describe(ex) }; }
+            catch (Exception ex) { return Failed(t, ex); }
         }
 
         // Always asks OBS, even when the list said "off": the stream may be connecting, and a stop the user confirmed
@@ -198,8 +234,8 @@ namespace VSCView.Obs
         private static StreamResult StopMain(ObsClient obs, StreamTarget t)
         {
             try { obs.Request("StopStream"); return new StreamResult { Key = t.Key, Ok = true, Message = "Stopping" }; }
-            catch (ObsRequestException ex) when (ex.Code == 501) { return new StreamResult { Key = t.Key, Ok = true, Message = "Already off" }; }
-            catch (Exception ex) { return new StreamResult { Key = t.Key, Ok = false, Message = Describe(ex) }; }
+            catch (ObsRequestException ex) when (ex.Code == 501) { return new StreamResult { Key = t.Key, Ok = true, Notice = true, Message = "Already off" }; }
+            catch (Exception ex) { return Failed(t, ex); }
         }
 
         private static StreamResult RunPlugin(ObsClient obs, StreamTarget t, bool start)
@@ -234,7 +270,7 @@ namespace VSCView.Obs
                         // own refusal (if any) is inside responseData, e.g. {"success": false, "error": "..."}.
                         refusal = VendorRefusal(r?["responseData"] as JObject);
                     }
-                    catch (ObsRequestException ex) { refusal = ex.Message; }
+                    catch (ObsRequestException ex) { refusal = SafeText(ex.Message); }
                     if (refusal == null) return new StreamResult { Key = t.Key, Ok = true, Message = start ? "Starting" : "Stopping" };
                     // Only a stop of an output that OBS's own output list also shows as off, refused with a "not running"
                     // answer, counts as done; it is still shown on the status line, since the answer came from a refusal.
@@ -244,8 +280,11 @@ namespace VSCView.Obs
                 }
                 return new StreamResult { Key = t.Key, Ok = false, Message = "Unknown kind of stream" };
             }
-            catch (Exception ex) { return new StreamResult { Key = t.Key, Ok = false, Message = Describe(ex) }; }
+            catch (Exception ex) { return Failed(t, ex); }
         }
+
+        private static StreamResult Failed(StreamTarget t, Exception ex) =>
+            new StreamResult { Key = t.Key, Ok = false, TimedOut = ex is TimeoutException, Message = Describe(ex) };
 
         /// <summary>The vendor's own failure inside responseData, or null when it reports none.</summary>
         internal static string VendorRefusal(JObject data)
@@ -258,8 +297,7 @@ namespace VSCView.Obs
             JToken reason = hasFlag ? (data["error"] ?? data["message"] ?? data["reason"]) : data["error"];
             if (!hasFlag && reason == null) return null;
             string text = reason != null && reason.Type == JTokenType.String ? (string)reason : null;
-            if (string.IsNullOrEmpty(text)) return "no reason given";
-            return text.Length > 200 ? text.Substring(0, 200) : text;
+            return SafeText(text);
         }
 
         // Narrow on purpose: only an answer that says the output isn't running may turn a refused stop into "Already off".
@@ -270,6 +308,7 @@ namespace VSCView.Obs
             return m.Contains("not running") || m.Contains("isn't running") || m.Contains("not active") || m.Contains("not started");
         }
 
-        private static string Describe(Exception ex) => ex.Message;
+        // Our own messages are plain; OBS's comments inside them are not trusted, so the whole text goes through SafeText.
+        private static string Describe(Exception ex) => SafeText(ex.Message);
     }
 }

@@ -22,7 +22,11 @@ A tiny control port lets a test drive OBS-side changes:
   curl "http://127.0.0.1:4466/plugins?mrtmp=0&aitum=0" -> pretend the multistream plugins aren't installed
        (also dup=1: Aitum lists a name twice; nonascii=1: a non-ASCII obs-multi-rtmp id; hostile=1: an Aitum
         output whose name is HTML)
+  curl "http://127.0.0.1:4466/outputlist?fail=1"   -> GetOutputList fails
+  curl "http://127.0.0.1:4466/hang?type=A,B"       -> requests of these types never get an answer (/hang clears)
   curl "http://127.0.0.1:4466/startmode?m=error"   -> StartStream fails; m=never: accepted but never live;
+                                                       m=hostile / m=long: the error comment has a bidi override and a
+                                                       line break / is 5000 characters;
                                                        m=slow: live 3 s after StartStream; m=ok: at once
   curl "http://127.0.0.1:4466/aitummode?m=slow"    -> Aitum outputs stay "connecting" (not in the output list) for
                                                        3 s after start_output; stop_output cancels; stopping an
@@ -64,7 +68,10 @@ state = {
     'start_mode': 'ok',
     'aitum_mode': 'ok',
     'aitum_refuse': False,   # stop_output refused for another reason
-    'aitum_answer': 'plain', # okmsg: successes carry {success: true, message}; objerr: refusals carry an object as error
+    'aitum_answer': 'plain', # okmsg: successes carry {success: true, message}; objerr: refusals carry an object as error;
+                             # hostile: a refusal with a bidi override and a line break; notactive: "output is not active"
+    'outputlist_fail': False,  # GetOutputList fails
+    'hang': [],                # request types that never get an answer
     'aitum_live_at': {},   # Aitum output name -> when a slow start goes live
     'live_at': 0.0,   # slow start: when the stream goes live
     'mrtmp': {'1001': False, '1002': False},              # target id -> running
@@ -145,6 +152,10 @@ def handle_request(rtype, data):
         mode = state['start_mode']
         if mode == 'error':
             return False, (702, 'Failed to start the stream (mock).')
+        if mode == 'hostile':
+            return False, (702, 'Failed' + chr(0x202E) + chr(10) + 'now')
+        if mode == 'long':
+            return False, (702, 'x' * 5000)
         if mode == 'never':
             return True, {}
         if mode == 'slow':
@@ -164,6 +175,8 @@ def handle_request(rtype, data):
         stream_event()
         return True, {}
     if rtype == 'GetOutputList':
+        if state['outputlist_fail']:
+            return False, (702, 'output list unavailable (mock)')
         outs = [{'outputName': 'simple_stream', 'outputKind': 'rtmp_output', 'outputActive': state['streaming']},
                 {'outputName': 'simple_file_output', 'outputKind': 'ffmpeg_muxer', 'outputActive': state['recording']}]
         outs += [{'outputName': 'multi-output', 'outputKind': 'rtmp_output', 'outputActive': True} for on in state['mrtmp'].values() if on]
@@ -206,7 +219,8 @@ def handle_request(rtype, data):
                 if n in state['aitum_live_at']:
                     del state['aitum_live_at'][n]      # still connecting: stopping cancels it
                 elif state['aitum_refuse']:
-                    err = {'code': 5} if state['aitum_answer'] == 'objerr' else 'stop refused (mock)'
+                    err = {'objerr': {'code': 5}, 'hostile': 'stop' + chr(0x202E) + chr(10) + 'refused',
+                           'notactive': 'output is not active'}.get(state['aitum_answer'], 'stop refused (mock)')
                     out['responseData'] = {'success': False, 'error': err}
                     return True, out
                 elif state['aitum'][n]:
@@ -330,6 +344,9 @@ async def ws_handler(reader, writer, password):
             msg = json.loads(data)
             if msg.get('op') == 6:
                 d = msg['d']
+                if d['requestType'] in state['hang']:
+                    print('mock: %s -> no answer (hang)' % d['requestType'])
+                    continue
                 ok, res = handle_request(d['requestType'], d.get('requestData'))
                 print('mock: %s %s -> %s' % (d['requestType'], json.dumps(d.get('requestData')), 'ok' if ok else res))
                 out = {'requestType': d['requestType'], 'requestId': d['requestId'],
@@ -387,6 +404,10 @@ async def control_handler(reader, writer):
             state['aitum'].setdefault(hostile, False)
         else:
             state['aitum'].pop(hostile, None)
+    elif u.path == '/outputlist':
+        state['outputlist_fail'] = q.get('fail') == '1'
+    elif u.path == '/hang':
+        state['hang'] = [x for x in q.get('type', '').split(',') if x]
     elif u.path == '/aitummode':
         state['aitum_mode'] = q.get('m', 'ok')
         state['aitum_refuse'] = q.get('refuse') == '1'
