@@ -235,7 +235,19 @@ control('/aitummode?m=ok&refuse=1')
 code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['aitum:Kick'], 'confirm': True})
 res = r['results'][0] if code == 200 else {}
 check('a vendor-level refusal of a stop is reported as failed, not as stopping', res.get('ok') is False and 'refused' in res.get('message', ''), r)
-control('/aitummode?m=ok&refuse=0')
+control('/aitummode?m=ok&refuse=1&answer=objerr')
+api('obs/streams/action', {'op': 'start', 'targets': ['aitum:Kick'], 'confirm': True})
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['aitum:Kick'], 'confirm': True})
+res = r['results'][0] if code == 200 else {}
+check('a refusal whose error is not text is still read as a refusal', res.get('ok') is False and res.get('message') == 'Aitum refused: no reason given', r)
+control('/aitummode?m=ok&refuse=0&answer=okmsg')
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['aitum:Kick'], 'confirm': True})
+res = r['results'][0] if code == 200 else {}
+check('a success answer that carries a message reads as success', res.get('ok') is True and res.get('message') == 'Stopping', r)
+code, r = api('obs/streams/action', {'op': 'start', 'targets': ['aitum:Kick'], 'confirm': True})
+res = r['results'][0] if code == 200 else {}
+check('also for a start', res.get('ok') is True and res.get('message') == 'Starting', r)
+control('/aitummode?m=ok&refuse=0&answer=plain')
 api('obs/streams/action', {'op': 'stop', 'targets': ['aitum:Kick'], 'confirm': True})
 
 # 7h. a stop is never refused as a whole because one stream is missing

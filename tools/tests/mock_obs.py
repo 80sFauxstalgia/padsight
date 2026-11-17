@@ -64,6 +64,7 @@ state = {
     'start_mode': 'ok',
     'aitum_mode': 'ok',
     'aitum_refuse': False,   # stop_output refused for another reason
+    'aitum_answer': 'plain', # okmsg: successes carry {success: true, message}; objerr: refusals carry an object as error
     'aitum_live_at': {},   # Aitum output name -> when a slow start goes live
     'live_at': 0.0,   # slow start: when the stream goes live
     'mrtmp': {'1001': False, '1002': False},              # target id -> running
@@ -205,7 +206,8 @@ def handle_request(rtype, data):
                 if n in state['aitum_live_at']:
                     del state['aitum_live_at'][n]      # still connecting: stopping cancels it
                 elif state['aitum_refuse']:
-                    out['responseData'] = {'success': False, 'error': 'stop refused (mock)'}
+                    err = {'code': 5} if state['aitum_answer'] == 'objerr' else 'stop refused (mock)'
+                    out['responseData'] = {'success': False, 'error': err}
                     return True, out
                 elif state['aitum'][n]:
                     state['aitum'][n] = False
@@ -219,10 +221,12 @@ def handle_request(rtype, data):
                 state['aitum_live_at'][n] = time.time() + 3
             else:
                 state['aitum'][n] = True
+            if state['aitum_answer'] == 'okmsg':
+                out['responseData'] = {'success': True, 'message': 'Started' if rt == 'start_output' else 'Stopped'}
             state['events'].append(('VendorEvent', {'vendorName': 'aitum-multistream',
                                     'eventType': 'output_started' if rt == 'start_output' else 'output_stopped',
                                     'eventData': {'name': 'aitum_multi_output_' + n}}, 1 << 9))
-            out['responseData'] = {}
+            out.setdefault('responseData', {})
             return True, out
         return False, (702, 'unknown vendor request')
     if rtype == 'GetCurrentProgramScene':
@@ -386,6 +390,7 @@ async def control_handler(reader, writer):
     elif u.path == '/aitummode':
         state['aitum_mode'] = q.get('m', 'ok')
         state['aitum_refuse'] = q.get('refuse') == '1'
+        state['aitum_answer'] = q.get('answer', 'plain')
     elif u.path == '/startmode':
         state['start_mode'] = q.get('m', 'ok')
     elif u.path == '/scene':

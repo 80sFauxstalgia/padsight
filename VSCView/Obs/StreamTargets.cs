@@ -252,10 +252,14 @@ namespace VSCView.Obs
         {
             if (data == null) return null;
             JToken success = data["success"] ?? data["ok"];
-            bool failed = success != null && success.Type == JTokenType.Boolean && !(bool)success;
-            string error = (string)(data["error"] ?? data["message"] ?? data["reason"]);
-            if (!failed && string.IsNullOrEmpty(error)) return null;
-            return string.IsNullOrEmpty(error) ? "no reason given" : error.Length > 200 ? error.Substring(0, 200) : error;
+            bool hasFlag = success != null && success.Type == JTokenType.Boolean;
+            if (hasFlag && (bool)success) return null; // an explicit success wins, whatever message comes with it
+            // Without a success flag, only an "error" field counts as a refusal; "message"/"reason" may just describe success.
+            JToken reason = hasFlag ? (data["error"] ?? data["message"] ?? data["reason"]) : data["error"];
+            if (!hasFlag && reason == null) return null;
+            string text = reason != null && reason.Type == JTokenType.String ? (string)reason : null;
+            if (string.IsNullOrEmpty(text)) return "no reason given";
+            return text.Length > 200 ? text.Substring(0, 200) : text;
         }
 
         // Narrow on purpose: only an answer that says the output isn't running may turn a refused stop into "Already off".
