@@ -30,7 +30,7 @@ From VSCView, by their authors:
 
 <p>
   <img width="42%" alt="Default (black)" src="../VSCView/themes/steamcontroller/default/black/SC_base.png">
-  <img width="42%" alt="Line Art" src="../VSCView/themes/steamcontroller/ishmobile/lineart/base.png">
+  <img width="42%" alt="Line Art" src="../VSCView/themes/steamcontroller/ishmobile/lineart/base-black.png">
 </p>
 
 Default (black) by [Al. Lopez (AL2009man)](https://github.com/AL2009man) · Line Art by
@@ -86,8 +86,8 @@ Default (black and white) by [Al. Lopez (AL2009man)](https://github.com/AL2009ma
   <img width="42%" alt="Joy-Con pair" src="../VSCView/themes/nintendoswitchjoycon/default/Joycon%20Pair/NSwitchJoyConPair_base.png">
 </p>
 
-Defaults by [Al. Lopez (AL2009man)](https://github.com/AL2009man) — the Joy-Con also ships in
-grip, left, right and horizontal layouts
+Defaults by [Al. Lopez (AL2009man)](https://github.com/AL2009man) — the pair shown here, plus
+grip, and single left or right Joy-Con (vertical or horizontal)
 
 ## Arcade stick
 
