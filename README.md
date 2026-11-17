@@ -10,6 +10,25 @@ PadSight is based on [Nielk1/VSCView](https://github.com/Nielk1/VSCView) by John
 
 <!-- SCREENSHOT: hero image, docs/screenshots/hero.png. Both controllers side by side in OBS over gameplay (Graphite 2026 + Vaporwave 2015), no green fringe. -->
 
+## What it looks like
+
+The six bundled PadSight themes, drawn and rendered from code (no manufacturer artwork):
+
+<p>
+  <img width="32%" alt="Graphite theme on the 2026 Steam Controller" src="VSCView/themes/steamcontroller2026/graphite/base.png">
+  <img width="32%" alt="Vaporwave Pixel theme on the 2026 Steam Controller" src="VSCView/themes/steamcontroller2026/vaporwave/base.png">
+  <img width="32%" alt="Realistic theme on the 2026 Steam Controller" src="VSCView/themes/steamcontroller2026/realistic/base.png">
+</p>
+<p>
+  <img width="32%" alt="Graphite theme on the 2015 Steam Controller" src="VSCView/themes/steamcontroller/graphite/base.png">
+  <img width="32%" alt="Vaporwave Pixel theme on the 2015 Steam Controller" src="VSCView/themes/steamcontroller/vaporwave/base.png">
+  <img width="32%" alt="Realistic theme on the 2015 Steam Controller" src="VSCView/themes/steamcontroller/realistic/base.png">
+</p>
+
+Top row: Steam Controller (2026) — Graphite, Vaporwave Pixel, Realistic. Bottom row: the same three on the original Steam Controller. On stream, button presses, trackpad touches, grips and gyro light up on the art in real time.
+
+Every controller kind also keeps its VSCView themes — DualSense, DualShock 4, Xbox, Switch, Steam Deck and more: [theme gallery](docs/theme-gallery.md).
+
 ## Features
 - **Real Steam Controller input.**
   - Both controllers: real trackpad touch positions and trails, and the rear grips / back buttons.
@@ -169,7 +188,7 @@ Copyright (c) 2026 Talaria Software LLC
 * Steam, Steam Controller and Steam Deck are trademarks of Valve Corporation. PlayStation, DualShock and DualSense are trademarks of Sony Interactive Entertainment. Xbox is a trademark of Microsoft. Nintendo Switch and Joy-Con are trademarks of Nintendo. Bluetooth is a trademark of Bluetooth SIG. Some community themes show these marks as they appear on the controllers, to identify them. PadSight is unofficial and not affiliated with or endorsed by any of these companies.
 
 ## Included themes
-Our own themes are marked *(this fork)*. Every other theme comes from VSCView and is credited to its author, as in upstream. The source of each image is in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md#artwork).
+Our own themes are marked *(this fork)*. Every other theme comes from VSCView and is credited to its author, as in upstream. Example images for every family: [theme gallery](docs/theme-gallery.md). The source of each image is in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md#artwork).
 
 * Valve Steam Controller (2026)
   * Graphite *(this fork; drawn by `tools/theme-gen/gen_steamcontroller2026.py`)*
