@@ -326,22 +326,31 @@ namespace VSCView
             if (!(b["targets"] is JArray arr) || arr.Count == 0 || arr.Count > 50 || arr.Any(x => x.Type != JTokenType.String))
                 return ApiResponse.Error(400, "Choose at least one stream");
             var keys = arr.Select(x => (string)x).Distinct().ToList();
+            if (keys.Any(k => !StreamKeyRx.IsMatch(k))) return ApiResponse.Error(400, "Unknown stream key");
             if (!streamOpLock.Wait(30000)) return ApiResponse.Error(409, "Another start or stop is still running. Try again in a moment.");
-            List<StreamResult> results;
+            var results = new List<StreamResult>();
             try
             {
                 StreamDiscovery d = StreamTargets.Discover(obs); // fresh, inside the lock: the true state after any earlier action
                 var known = new HashSet<string>(d.Targets.Select(t => t.Key));
                 var unknown = keys.Where(k => !known.Contains(k)).ToList();
-                if (unknown.Count > 0) return ApiResponse.Error(400, "OBS doesn't have these streams (any more): " + string.Join(", ", unknown));
-                results = StreamTargets.Run(obs, d, op == "start", keys);
+                // A start refuses streams OBS doesn't list. A stop never refuses as a whole: it stops every stream OBS
+                // does list (OBS's own stream included) and reports the missing ones as failed, because a plugin that
+                // didn't answer this time, or a renamed output, must not keep the rest live.
+                if (unknown.Count > 0 && op == "start") return ApiResponse.Error(400, "OBS doesn't have these streams (any more): " + string.Join(", ", unknown));
+                results.AddRange(StreamTargets.Run(obs, d, op == "start", keys.Where(known.Contains).ToList()));
+                results.AddRange(unknown.Select(k => new StreamResult
+                {
+                    Key = k, Ok = false,
+                    Message = "OBS doesn't list this stream right now, so it wasn't stopped. Check it in OBS.",
+                }));
             }
             finally { streamOpLock.Release(); }
             Debug.WriteLine($"Stream {op}: " + string.Join("; ", results.Select(r => $"{r.Key} {(r.Ok ? "ok" : "failed")} {r.Message}")));
             return ApiResponse.Ok(JsonConvert.SerializeObject(new
             {
                 op,
-                results = results.Select(r => new { key = r.Key, ok = r.Ok, message = r.Message }),
+                results = results.Select(r => new { key = r.Key, ok = r.Ok, message = r.Message, notice = r.Notice }),
             }));
         }
 

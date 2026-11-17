@@ -29,6 +29,7 @@ namespace VSCView.Obs
     {
         public string Key { get; set; }
         public bool Ok { get; set; }
+        public bool Notice { get; set; }  // ok, but worth keeping on the status line (e.g. "already off" from a refusal)
         public string Message { get; set; }
     }
 
@@ -220,21 +221,49 @@ namespace VSCView.Obs
                 }
                 if (t.Kind == "aitum")
                 {
-                    obs.Request("CallVendorRequest", new JObject
+                    string refusal;
+                    try
                     {
-                        ["vendorName"] = AitumVendor,
-                        ["requestType"] = start ? "start_output" : "stop_output",
-                        ["requestData"] = new JObject { ["name"] = t.Name },
-                    });
-                    return new StreamResult { Key = t.Key, Ok = true, Message = start ? "Starting" : "Stopping" };
+                        JObject r = obs.Request("CallVendorRequest", new JObject
+                        {
+                            ["vendorName"] = AitumVendor,
+                            ["requestType"] = start ? "start_output" : "stop_output",
+                            ["requestData"] = new JObject { ["name"] = t.Name },
+                        });
+                        // obs-websocket reports a vendor request as successful whenever the vendor answered; the vendor's
+                        // own refusal (if any) is inside responseData, e.g. {"success": false, "error": "..."}.
+                        refusal = VendorRefusal(r?["responseData"] as JObject);
+                    }
+                    catch (ObsRequestException ex) { refusal = ex.Message; }
+                    if (refusal == null) return new StreamResult { Key = t.Key, Ok = true, Message = start ? "Starting" : "Stopping" };
+                    // Only a stop of an output that OBS's own output list also shows as off, refused with a "not running"
+                    // answer, counts as done; it is still shown on the status line, since the answer came from a refusal.
+                    if (!start && t.Active == false && SaysNotRunning(refusal))
+                        return new StreamResult { Key = t.Key, Ok = true, Notice = true, Message = "Already off (Aitum said it isn't running)" };
+                    return new StreamResult { Key = t.Key, Ok = false, Message = "Aitum refused: " + refusal };
                 }
                 return new StreamResult { Key = t.Key, Ok = false, Message = "Unknown kind of stream" };
             }
-            // Aitum refuses stop_output for an output that isn't running: when OBS's own output list also says it's off,
-            // that is the answer we wanted.
-            catch (ObsRequestException) when (!start && t.Kind == "aitum" && t.Active == false)
-            { return new StreamResult { Key = t.Key, Ok = true, Message = "Already off" }; }
             catch (Exception ex) { return new StreamResult { Key = t.Key, Ok = false, Message = Describe(ex) }; }
+        }
+
+        /// <summary>The vendor's own failure inside responseData, or null when it reports none.</summary>
+        internal static string VendorRefusal(JObject data)
+        {
+            if (data == null) return null;
+            JToken success = data["success"] ?? data["ok"];
+            bool failed = success != null && success.Type == JTokenType.Boolean && !(bool)success;
+            string error = (string)(data["error"] ?? data["message"] ?? data["reason"]);
+            if (!failed && string.IsNullOrEmpty(error)) return null;
+            return string.IsNullOrEmpty(error) ? "no reason given" : error.Length > 200 ? error.Substring(0, 200) : error;
+        }
+
+        // Narrow on purpose: only an answer that says the output isn't running may turn a refused stop into "Already off".
+        // (The exact wording of Aitum's refusal is still to be confirmed against a real OBS.)
+        internal static bool SaysNotRunning(string message)
+        {
+            string m = (message ?? "").ToLowerInvariant();
+            return m.Contains("not running") || m.Contains("isn't running") || m.Contains("not active") || m.Contains("not started");
         }
 
         private static string Describe(Exception ex) => ex.Message;

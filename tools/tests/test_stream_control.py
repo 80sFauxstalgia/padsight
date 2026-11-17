@@ -225,8 +225,30 @@ time.sleep(4)
 st = control('/state')
 check('the connecting Aitum output never went live', not st['aitum']['Kick'] and not st['streaming'], st)
 control('/aitummode?m=ok')
+# The "not running" refusal below is the mock's guess at Aitum's answer, to be confirmed against a real OBS.
 code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['aitum:Kick'], 'confirm': True})
-check('stopping an Aitum output that is off reads as already off', code == 200 and r['results'][0]['ok'] and r['results'][0]['message'] == 'Already off', r)
+res = r['results'][0] if code == 200 else {}
+check('stopping an Aitum output that is off reads as already off, flagged for the status line',
+      res.get('ok') is True and res.get('notice') is True and res.get('message', '').startswith('Already off'), r)
+api('obs/streams/action', {'op': 'start', 'targets': ['aitum:Kick'], 'confirm': True})
+control('/aitummode?m=ok&refuse=1')
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['aitum:Kick'], 'confirm': True})
+res = r['results'][0] if code == 200 else {}
+check('a vendor-level refusal of a stop is reported as failed, not as stopping', res.get('ok') is False and 'refused' in res.get('message', ''), r)
+control('/aitummode?m=ok&refuse=0')
+api('obs/streams/action', {'op': 'stop', 'targets': ['aitum:Kick'], 'confirm': True})
+
+# 7h. a stop is never refused as a whole because one stream is missing
+api('obs/streams/action', {'op': 'start', 'targets': ['main'], 'confirm': True})
+control('/plugins?aitum=0')   # Aitum stops answering (or the output was renamed)
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['main', 'aitum:Kick'], 'confirm': True})
+res = {x['key']: x for x in r.get('results', [])}
+check('stop with a missing stream still succeeds as a request', code == 200, (code, r))
+check('OBS\'s own stream is stopped anyway', res.get('main', {}).get('ok') is True and not control('/state')['streaming'], r)
+check('the missing stream is reported as not stopped', res.get('aitum:Kick', {}).get('ok') is False, r)
+control('/plugins?aitum=1')
+code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['../x'], 'confirm': True})
+check('a malformed key is still refused', code == 400, (code, r))
 
 # 7g. names that read differently from what they are
 control('/plugins?bidi=1')

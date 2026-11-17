@@ -26,7 +26,8 @@ A tiny control port lets a test drive OBS-side changes:
                                                        m=slow: live 3 s after StartStream; m=ok: at once
   curl "http://127.0.0.1:4466/aitummode?m=slow"    -> Aitum outputs stay "connecting" (not in the output list) for
                                                        3 s after start_output; stop_output cancels; stopping an
-                                                       output that isn't running is refused
+                                                       output that isn't running is refused inside responseData
+                                                       ({success: false}); &refuse=1 refuses every stop
        (plugins bidi=1: an Aitum output name with a right-to-left override)
 Standard library only.
 """
@@ -62,6 +63,7 @@ state = {
     'plugins': {'mrtmp': True, 'aitum': True, 'dup': False, 'nonascii': False, 'hostile': False, 'bidi': False},
     'start_mode': 'ok',
     'aitum_mode': 'ok',
+    'aitum_refuse': False,   # stop_output refused for another reason
     'aitum_live_at': {},   # Aitum output name -> when a slow start goes live
     'live_at': 0.0,   # slow start: when the stream goes live
     'mrtmp': {'1001': False, '1002': False},              # target id -> running
@@ -202,10 +204,16 @@ def handle_request(rtype, data):
             if rt == 'stop_output':
                 if n in state['aitum_live_at']:
                     del state['aitum_live_at'][n]      # still connecting: stopping cancels it
+                elif state['aitum_refuse']:
+                    out['responseData'] = {'success': False, 'error': 'stop refused (mock)'}
+                    return True, out
                 elif state['aitum'][n]:
                     state['aitum'][n] = False
                 else:
-                    return False, (702, 'output is not running')
+                    # Request status success with the vendor's own failure inside, as obs-websocket passes vendor
+                    # answers through. The wording is the mock's guess until a real-OBS check.
+                    out['responseData'] = {'success': False, 'error': 'output is not running'}
+                    return True, out
             elif state['aitum_mode'] == 'slow':
                 import time
                 state['aitum_live_at'][n] = time.time() + 3
@@ -377,6 +385,7 @@ async def control_handler(reader, writer):
             state['aitum'].pop(hostile, None)
     elif u.path == '/aitummode':
         state['aitum_mode'] = q.get('m', 'ok')
+        state['aitum_refuse'] = q.get('refuse') == '1'
     elif u.path == '/startmode':
         state['start_mode'] = q.get('m', 'ok')
     elif u.path == '/scene':

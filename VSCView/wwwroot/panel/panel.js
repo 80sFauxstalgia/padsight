@@ -490,7 +490,7 @@
   let streams = null;          // {targets, multiRtmp, multiRtmpActive, aitum, version, saved:{prefs, combos}}
   let streamsAt = 0, streamsVersion = -1, streamsLoading = false;
   let streamsError = null;     // set when the last refresh failed: every state shown is then unknown
-  let busyStart = null, busyStop = null; // text shown while a start / a stop runs; only Start buttons are disabled
+  let busyStart = null, stopsRunning = 0; // a start / the stops in flight; only Start buttons are disabled
   let streamNotice = null, noticeTimer = null; // the last action's warnings and failures, kept on screen ~20 s
   const STREAM_TYPES = ['Twitch', 'YouTube', 'Kick', 'Other'];
 
@@ -544,14 +544,16 @@
     const m = streams ? streams.targets.filter(x => x.kind === 'mrtmp').length : 0;
     $('#streamSummary').textContent = streamsError || (m ? `obs-multi-rtmp: ${streams.multiRtmpActive} of ${m} targets live (it doesn’t report which).` : '');
     $('#streamSummary').className = 'small' + (streamsError ? ' warn-text' : '');
-    $('#streamBusy').textContent = [busyStart, busyStop].filter(Boolean).join(' · ');
+    $('#streamBusy').textContent = [busyStart, busyStopText()].filter(Boolean).join(' · ');
     $('#streamNotice').textContent = streamNotice || '';
   }
-  const startLocked = () => !!(busyStart || busyStop);
+  const startLocked = () => !!(busyStart || stopsRunning);
+  const busyStopText = () => !stopsRunning ? null
+    : (busyStart ? 'Stopping, right after the start that’s running…' : stopsRunning > 1 ? `Stopping (${stopsRunning} requests)…` : 'Stopping…');
 
   function renderStreams(force) {
     if (!$('#streamList') || !streams) return;
-    const sig = JSON.stringify([streams, streamsError, busyStart, busyStop]);
+    const sig = JSON.stringify([streams, streamsError, busyStart, stopsRunning]);
     if (!force && sig === lastSig.streams) return;
     const typing = document.activeElement && $('#streamList').contains(document.activeElement) && document.activeElement.type === 'text';
     if (typing && !force) { updateStreamsInPlace(); return; }
@@ -604,7 +606,7 @@
 
   // In-page confirm dialog for the whole panel (window.confirm may be suppressed inside an OBS dock).
   // Resolves true only on the OK button; Cancel, Escape and a click outside resolve false.
-  let confirmResolve = null;
+  let confirmResolve = null, confirmOpenedAt = 0;
   function askConfirm({ title, items, note, okText, danger }) {
     let back = $('#confirmModal');
     if (!back) {
@@ -621,6 +623,7 @@
       <div class="row"><button class="btn" type="button" data-act="confirm-no">Cancel</button>
       <button class="btn ${danger ? 'danger' : 'primary'}" type="button" data-act="confirm-yes">${esc(okText)}</button></div>`;
     back.hidden = false;
+    confirmOpenedAt = Date.now();
     $('[data-act="confirm-no"]', back).focus();
     return new Promise(res => { confirmResolve = res; });
   }
@@ -649,7 +652,7 @@
     if (!ok) return;
     const main = streams.targets.find(t => t.key === 'main');
     if (op === 'start') busyStart = keys.includes('main') && main?.active !== true ? 'Starting OBS stream, up to 15 s…' : 'Starting…';
-    else busyStop = busyStart ? 'Stopping, right after the start that’s running…' : 'Stopping…';
+    else stopsRunning++;
     setNotice(null);
     renderStreams(true);
     try {
@@ -657,13 +660,14 @@
       const bad = r.results.filter(x => !x.ok);
       toast(bad.length ? `${bad.length} didn’t ${op}` : r.results.map(x => `${streamNames([x.key])[0]}: ${x.message}`).join(' · '));
       // Failures and warnings ("OBS may still go live…") stay on screen while the list re-checks OBS.
-      if (bad.length) setNotice(bad.map(x => `${streamNames([x.key])[0]}: ${x.message}`).join(' · '));
+      const keep = r.results.filter(x => !x.ok || x.notice);
+      if (keep.length) setNotice(keep.map(x => `${streamNames([x.key])[0]}: ${x.message}`).join(' · '));
     } catch (e) {
       toast(e.message);
       setNotice(`${op === 'start' ? 'Start' : 'Stop'} failed: ${e.message}`);
     } finally {
-      if (op === 'start') busyStart = null; else busyStop = null;
-      renderStreams(true);
+      if (op === 'start') busyStart = null; else stopsRunning--;
+      renderStreams();   // not forced: a name typed meanwhile survives (the in-place update refreshes buttons)
     }
     // OBS and the plugins settle over the next seconds (and a slow OBS stream may still go live): re-check for ~20 s.
     // Not forced, so a name being typed is never wiped; the list redraws when the state changes.
@@ -1066,7 +1070,7 @@
       await saveStreamPrefs(Object.assign({}, streams.saved.combos || {}, { [name]: keys }));
       $('#comboName').value = '';
     },
-    'confirm-yes': () => closeConfirm(true),
+    'confirm-yes': () => { if (Date.now() - confirmOpenedAt >= 300) closeConfirm(true); },  // a double tap can't confirm
     'confirm-no': () => closeConfirm(false),
     'combo-del': async b => {
       if (!await askConfirm({ title: `Delete the combination "${b.dataset.name}"?`, items: [], note: 'The streams themselves stay as they are.', okText: 'Delete' })) return;
