@@ -551,7 +551,7 @@
     let summary = '';
     if (streamsError) summary = streamsError;
     else if (streams && streams.obsSlow) summary = 'OBS is slow to answer, so some states are unknown. Refresh in a moment.';
-    else if (streams && !streams.outputListOk) summary = 'OBS’s output list didn’t answer, so live states are unknown.';
+    else if (streams && !streams.outputListOk) summary = 'OBS’s output list didn’t answer, so live states are unknown. Refresh in a moment.';
     else if (m) summary = `obs-multi-rtmp: ${streams.multiRtmpActive} of ${m} targets live (it doesn’t report which).`;
     setText($('#streamSummary'), summary);
     const cls = 'small' + (streamsError || streams?.obsSlow || (streams && !streams.outputListOk) ? ' warn-text' : '');
@@ -629,11 +629,14 @@
     for (const k of ['key', 'op', 'scope', 'name']) if (d[k] !== undefined) sel += `[data-${k}="${CSS.escape(d[k])}"]`;
     return sel;
   }
+  // Back to the control that opened the dialog when it still exists and is enabled. A stream dialog otherwise falls back
+  // to the Streams heading (a Start button is disabled while its start runs); other dialogs leave focus alone.
   function restoreFocus(onlyIfLost) {
     if (!confirmReturn || confirmResolve) return;
     if (onlyIfLost && document.activeElement && document.activeElement !== document.body) return;
-    const el = (confirmReturn && $(confirmReturn)) || $('#obsStreams h2');
-    if (el) el.focus();
+    const el = confirmReturn.sel && $(confirmReturn.sel);
+    if (el && !el.disabled) { el.focus(); return; }
+    if (confirmReturn.stream) { const h = $('#obsStreams h2'); if (h) h.focus(); }
   }
   function askConfirm({ title, items, note, okText, danger }) {
     let back = $('#confirmModal');
@@ -645,7 +648,8 @@
       document.body.appendChild(back);
     }
     if (confirmResolve) closeConfirm(false);
-    confirmReturn = focusSelector(document.activeElement);
+    const opener = document.activeElement;
+    confirmReturn = { sel: focusSelector(opener), stream: !!(opener && opener.closest && opener.closest('#obsStreams')) };
     $('.modal', back).innerHTML = `<p id="confirmTitle"><b>${esc(title)}</b></p>
       ${items && items.length ? `<ul id="confirmList">${items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
       ${note ? `<p class="small" id="confirmNote">${esc(note)}</p>` : ''}
@@ -688,7 +692,10 @@
     if (op === 'start' && startLocked()) return;   // a Stop is always allowed; the app runs it after any start
     if (!keys.length) { toast(op === 'start' ? 'Those streams are already live' : 'No streams to stop'); return; }
     // Each item names its kind, so an Aitum output called "OBS stream" can't pass for OBS's own stream.
-    const items = keys.map(k => { const t = streams.targets.find(x => x.key === k); return t ? `${streamLabel(t)} (${KIND_LABEL[t.kind]})` : k; });
+    const items = keys.map(k => {
+      const t = streams.targets.find(x => x.key === k);
+      return !t ? k : t.kind === 'main' ? streamLabel(t) : `${streamLabel(t)} (${KIND_LABEL[t.kind]})`;
+    });
     const ok = await askConfirm(op === 'start'
       ? { title: 'Start these streams?', items, note: 'This puts these streams live.', okText: 'Start now' }
       : { title: 'Stop these streams?', items, note: 'This ends those broadcasts. Streams already off are skipped.', okText: 'Stop now', danger: true });

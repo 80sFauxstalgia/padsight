@@ -279,6 +279,10 @@ control('/startmode?m=hostile')
 code, r = api('obs/streams/action', {'op': 'start', 'targets': ['main'], 'confirm': True})
 msg = r['results'][0]['message'] if code == 200 else ''
 check('an OBS error comment with a bidi override or line break is not shown', msg == 'reason not shown', r)
+control('/startmode?m=linesep')
+code, r = api('obs/streams/action', {'op': 'start', 'targets': ['main'], 'confirm': True})
+msg = r['results'][0]['message'] if code == 200 else ''
+check('an OBS error comment with a line separator (U+2028) is not shown', msg == 'reason not shown', r)
 control('/startmode?m=long')
 code, r = api('obs/streams/action', {'op': 'start', 'targets': ['main'], 'confirm': True})
 msg = r['results'][0]['message'] if code == 200 else ''
@@ -315,7 +319,8 @@ t0 = time.time()
 code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['mrtmp:1001', 'mrtmp:1002', 'main'], 'confirm': True})
 took = time.time() - t0
 res = {x['key']: x for x in r.get('results', [])}
-check('after one timeout the rest is skipped, not waited for', code == 200 and took < 13 and res.get('mrtmp:1002', {}).get('message') == "Skipped: OBS isn't answering", (round(took, 1), r))
+check('after one timeout the remaining plugins are not waited for', code == 200 and took < 13 and res.get('mrtmp:1002', {}).get('message', '').startswith('Not stopped'), (round(took, 1), r))
+check('a hung plugin request never keeps OBS\'s own stream live', res.get('main', {}).get('ok') is True and 'StopStream:{}' in calls() and not control('/state')['streaming'], (r, calls()[-3:]))
 control('/hang')
 control('/hang?type=GetStreamStatus')
 code, r = api('obs/streams/action', {'op': 'stop', 'targets': ['main'], 'confirm': True})

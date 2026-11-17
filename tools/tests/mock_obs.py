@@ -156,6 +156,8 @@ def handle_request(rtype, data):
             return False, (702, 'Failed' + chr(0x202E) + chr(10) + 'now')
         if mode == 'long':
             return False, (702, 'x' * 5000)
+        if mode == 'linesep':
+            return False, (702, 'Failed' + chr(0x2028) + 'now')
         if mode == 'never':
             return True, {}
         if mode == 'slow':

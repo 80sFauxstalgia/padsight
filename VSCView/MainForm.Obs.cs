@@ -328,13 +328,16 @@ namespace VSCView
                 return ApiResponse.Error(400, "Choose at least one stream");
             var keys = arr.Select(x => (string)x).Distinct().ToList();
             if (keys.Any(k => !StreamKeyRx.IsMatch(k))) return ApiResponse.Error(400, "Unknown stream key");
-            // A Stop waits longer than the worst-case Start (discovery and every OBS call are time-bounded, about 60 s
-            // at most), so a confirmed Stop queued behind a slow Start still runs instead of being refused.
+            // A Stop waits longer than the worst-case Start (a 45 s deadline for discovery and the plugin starts, plus at
+            // most two OBS calls already in flight at about 10 s each: about 65 s), so a confirmed Stop queued behind a
+            // slow Start still runs instead of being refused.
             if (!streamOpLock.Wait(op == "stop" ? 90000 : 30000))
                 return ApiResponse.Error(409, "Another start or stop is still running. Try again in a moment.");
             var results = new List<StreamResult>();
             try
             {
+                // One deadline for the whole operation; a stop's own OBS stream is never skipped (see StreamTargets.Run).
+                DateTime deadline = DateTime.UtcNow.AddSeconds(op == "start" ? 45 : 60);
                 StreamDiscovery d = StreamTargets.Discover(obs); // fresh, inside the lock: the true state after any earlier action
                 var known = new HashSet<string>(d.Targets.Select(t => t.Key));
                 var unknown = keys.Where(k => !known.Contains(k)).ToList();
@@ -342,11 +345,13 @@ namespace VSCView
                 // does list (OBS's own stream included) and reports the missing ones as failed, because a plugin that
                 // didn't answer this time, or a renamed output, must not keep the rest live.
                 if (unknown.Count > 0 && op == "start") return ApiResponse.Error(400, "OBS doesn't have these streams (any more): " + string.Join(", ", unknown));
-                results.AddRange(StreamTargets.Run(obs, d, op == "start", keys.Where(known.Contains).ToList()));
+                results.AddRange(StreamTargets.Run(obs, d, op == "start", keys.Where(known.Contains).ToList(), deadline));
                 results.AddRange(unknown.Select(k => new StreamResult
                 {
                     Key = k, Ok = false,
-                    Message = "OBS doesn't list this stream right now, so it wasn't stopped. Check it in OBS.",
+                    Message = d.ObsSlow
+                        ? "Not stopped: OBS is slow to answer, so this stream couldn't be checked. Check it in OBS."
+                        : "OBS doesn't list this stream right now, so it wasn't stopped. Check it in OBS.",
                 }));
             }
             finally { streamOpLock.Release(); }

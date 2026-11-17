@@ -148,22 +148,29 @@ namespace VSCView.Obs
         /// </summary>
         internal static bool IsPlainText(string s) => s.All(c => c >= 0x20 && !(c >= 0x7F && c <= 0x9F) && !IsBidiControl(c));
 
+        // Line and paragraph separators (U+2028, U+2029) and zero-width characters (U+200B-U+200D, U+2060-U+2064, U+FEFF):
+        // refused in messages shown from OBS or a plugin, on top of IsPlainText.
+        internal static bool IsInvisibleOrBreak(char c) =>
+            c == '\u2028' || c == '\u2029' || (c >= '\u200B' && c <= '\u200D') || (c >= '\u2060' && c <= '\u2064') || c == '\uFEFF';
+
         internal static bool IsBidiControl(char c) =>
             (c >= '\u202A' && c <= '\u202E') || (c >= '\u2066' && c <= '\u2069') || c == '\u200E' || c == '\u200F' || c == '\u061C';
 
         public const string SkippedNotLive = "Skipped: OBS's own stream isn't live, so nothing else was started";
         public const string SkippedSlow = "Skipped: OBS isn't answering";
+        public const string NotStoppedSlow = "Not stopped: OBS isn't answering. Check it in OBS.";
         public const string ReasonNotShown = "reason not shown";
 
         /// <summary>
         /// Every message that comes from OBS or a plugin (error comments, vendor reasons) passes here before it is shown:
-        /// text that isn't plain (controls, bidi overrides, line breaks) is replaced, not repaired, and long text is
+        /// text that isn't plain (controls, bidi overrides, line and paragraph breaks, zero-width characters) is replaced,
+        /// not repaired, and long text is
         /// capped at 200 characters without splitting a surrogate pair.
         /// </summary>
         internal static string SafeText(string s)
         {
             if (string.IsNullOrEmpty(s)) return "no reason given";
-            if (!IsPlainText(s)) return ReasonNotShown;
+            if (!IsPlainText(s) || s.Any(IsInvisibleOrBreak)) return ReasonNotShown;
             if (s.Length <= 200) return s;
             int cut = char.IsHighSurrogate(s[199]) ? 199 : 200;
             return s.Substring(0, cut) + "...";
@@ -174,7 +181,7 @@ namespace VSCView.Obs
         /// if it fails or doesn't go live in time, no plugin target is started. Stop: plugin targets first, then OBS's own
         /// stream. The caller holds the stream-operation lock, so a Stop never runs in the middle of a Start.
         /// </summary>
-        public static List<StreamResult> Run(ObsClient obs, StreamDiscovery d, bool start, IList<string> keys, int mainWaitMs = 15000)
+        public static List<StreamResult> Run(ObsClient obs, StreamDiscovery d, bool start, IList<string> keys, DateTime deadline, int mainWaitMs = 15000)
         {
             var byKey = new Dictionary<string, StreamTarget>();
             foreach (var t in d.Targets) if (!byKey.ContainsKey(t.Key)) byKey[t.Key] = t;
@@ -185,7 +192,7 @@ namespace VSCView.Obs
 
             if (start && main != null)
             {
-                StreamResult r = StartMain(obs, main, mainWaitMs);
+                StreamResult r = StartMain(obs, main, mainWaitMs, deadline);
                 results.Add(r);
                 if (!r.Ok)
                 {
@@ -194,27 +201,37 @@ namespace VSCView.Obs
                     return results;
                 }
             }
+            // After the first timeout, or past the operation's deadline, the remaining plugin targets are skipped, so a slow
+            // OBS can't hold the stream-operation lock for a timeout per target.
             bool slow = false;
             foreach (var t in plugins)
             {
-                if (slow) { results.Add(new StreamResult { Key = t.Key, Ok = false, Message = SkippedSlow }); continue; }
+                if (slow || DateTime.UtcNow > deadline)
+                {
+                    results.Add(new StreamResult { Key = t.Key, Ok = false, Message = start ? SkippedSlow : NotStoppedSlow });
+                    continue;
+                }
                 StreamResult r = RunPlugin(obs, t, start);
                 results.Add(r);
                 slow = r.TimedOut;
                 if (!slow) Thread.Sleep(150); // let each plugin settle; avoids a burst of simultaneous connects
             }
-            if (!start && main != null)
-                results.Add(slow ? new StreamResult { Key = main.Key, Ok = false, Message = SkippedSlow } : StopMain(obs, main));
+            // A stop always reaches OBS's own stream: a hung plugin request says nothing about OBS core, and a broadcast
+            // the user asked to end must not stay live because of it.
+            if (!start && main != null) results.Add(StopMain(obs, main));
             return results;
         }
 
-        private static StreamResult StartMain(ObsClient obs, StreamTarget t, int waitMs)
+        public const string MayStillGoLive = "It may still go live, so watch OBS; stop it there or here if you don't want it.";
+
+        private static StreamResult StartMain(ObsClient obs, StreamTarget t, int waitMs, DateTime deadline)
         {
             if (t.Active == true) return new StreamResult { Key = t.Key, Ok = true, Message = "Already live" };
             try
             {
                 obs.Request("StartStream");
                 var end = DateTime.UtcNow.AddMilliseconds(waitMs);
+                if (end > deadline) end = deadline;
                 while (DateTime.UtcNow < end)
                 {
                     if ((bool?)obs.Request("GetStreamStatus")["outputActive"] == true) return new StreamResult { Key = t.Key, Ok = true, Message = "Live" };
@@ -223,9 +240,11 @@ namespace VSCView.Obs
                 return new StreamResult
                 {
                     Key = t.Key, Ok = false,
-                    Message = $"OBS hasn't confirmed it's live after {waitMs / 1000} s. It may still go live, so watch OBS; stop it there or here if you don't want it.",
+                    Message = "OBS hasn't confirmed it's live yet. " + MayStillGoLive,
                 };
             }
+            // StartStream may have reached OBS even though the answer didn't come back in time.
+            catch (TimeoutException) { return new StreamResult { Key = t.Key, Ok = false, TimedOut = true, Message = "OBS didn't answer in time. " + MayStillGoLive }; }
             catch (Exception ex) { return Failed(t, ex); }
         }
 
@@ -284,7 +303,11 @@ namespace VSCView.Obs
         }
 
         private static StreamResult Failed(StreamTarget t, Exception ex) =>
-            new StreamResult { Key = t.Key, Ok = false, TimedOut = ex is TimeoutException, Message = Describe(ex) };
+            new StreamResult
+            {
+                Key = t.Key, Ok = false, TimedOut = ex is TimeoutException,
+                Message = ex is TimeoutException ? "OBS didn't answer. Check that OBS is running." : Describe(ex),
+            };
 
         /// <summary>The vendor's own failure inside responseData, or null when it reports none.</summary>
         internal static string VendorRefusal(JObject data)
