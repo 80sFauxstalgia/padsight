@@ -135,6 +135,25 @@ control('/scene?name=Gameplay')
 s = wait_for(lambda s: s['visible'] is True, 'visible again')
 check('visible again on other scenes', s['visible'] is True, s)
 
+# 6b. a scene whose name closes an isolate and reverses text can't reorder the reason around it
+BIDI = set(chr(c) for c in list(range(0x202A, 0x202F)) + list(range(0x2066, 0x206A)) + [0x200E, 0x200F, 0x61C])
+hostile = 'X' + chr(0x2069) + chr(0x202E) + 'abc'
+control('/hostilescene?on=1')
+api('obs/rules', {'hideScenes': [hostile]})
+control('/scene?name=' + urllib.parse.quote(hostile))
+s = wait_for(lambda s: s['visible'] is False, 'hidden on the hostile scene')
+hr = s.get('hiddenReason') or ''
+inner = hr.replace(chr(0x2068), '', 1)[::-1].replace(chr(0x2069), '', 1)[::-1]  # our one FSI ... PDI pair removed
+check('hidden on a scene with bidi characters in its name', s['visible'] is False and 'Xabc' in hr, hr.encode('unicode_escape'))
+check('the reason carries exactly one isolate pair and no other bidi control', hr.count(chr(0x2068)) == 1 and hr.count(chr(0x2069)) == 1 and not (set(inner) & BIDI), hr.encode('unicode_escape'))
+code, sc = api('obs/scenes')
+check('the raw scene name is still listed as OBS has it', code == 200 and hostile in sc['scenes'], code)
+check('a source with that name is still listed', any(x['name'] == hostile for x in sc.get('sources', [])), [x['name'].encode('unicode_escape') for x in sc.get('sources', [])])
+api('obs/rules', {'hideScenes': []})
+control('/scene?name=Gameplay')
+control('/hostilescene?on=0')
+wait_for(lambda s: s['visible'] is True, 'visible again')
+
 # 7. only while live
 api('obs/rules', {'onlyWhenLive': True})
 s = wait_for(lambda s: s['visible'] is False, 'hidden offline')

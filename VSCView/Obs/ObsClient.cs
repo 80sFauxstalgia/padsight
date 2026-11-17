@@ -162,7 +162,7 @@ namespace VSCView.Obs
                     }
                     SetStatus(ObsStatus.Unreachable, ex is WebSocketException || ex is IOException || ex is OperationCanceledException
                         ? $"OBS isn't answering on {Host}:{Port}. Is OBS running, with its WebSocket server on?"
-                        : StreamTargets.SafeText(ex.Message));
+                        : "OBS isn't answering as expected. Check that OBS is running with its WebSocket server on.");
                 }
                 finally
                 {

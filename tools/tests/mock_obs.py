@@ -25,6 +25,7 @@ A tiny control port lets a test drive OBS-side changes:
   curl "http://127.0.0.1:4466/outputlist?fail=1"   -> GetOutputList fails
   curl "http://127.0.0.1:4466/scenefail?on=1"      -> GetSceneList fails with a hostile error comment
   curl "http://127.0.0.1:4466/hello?version=x"     -> the obsWebSocketVersion sent to clients that connect next
+  curl "http://127.0.0.1:4466/hostilescene?on=1"   -> add a scene and a PadSight source named X + PDI + RLO + "abc"
   curl "http://127.0.0.1:4466/hang?type=A,B"       -> requests of these types never get an answer (/hang clears)
   curl "http://127.0.0.1:4466/startmode?m=error"   -> StartStream fails; m=never: accepted but never live;
                                                        m=hostile / m=long: the error comment has a bidi override and a
@@ -412,6 +413,17 @@ async def control_handler(reader, writer):
             state['aitum'].setdefault(hostile, False)
         else:
             state['aitum'].pop(hostile, None)
+    elif u.path == '/hostilescene':
+        # a scene and a PadSight browser source whose name closes an isolate (PDI) and then reverses text (RLO)
+        hostile = 'X' + chr(0x2069) + chr(0x202E) + 'abc'
+        if q.get('on') == '1':
+            if hostile not in state['scenes']:
+                state['scenes'].append(hostile)
+            state['inputs'][hostile] = ('browser_source', {'url': 'http://127.0.0.1:47821/', 'width': 1000, 'height': 760})
+        else:
+            if hostile in state['scenes']:
+                state['scenes'].remove(hostile)
+            state['inputs'].pop(hostile, None)
     elif u.path == '/hello':
         state['ws_version'] = q.get('version', '5.5.0')
     elif u.path == '/scenefail':
