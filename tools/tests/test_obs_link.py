@@ -9,6 +9,7 @@ import json
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 ap = argparse.ArgumentParser()
@@ -75,6 +76,7 @@ api('obs/connect', {'enabled': True, 'password': 'testpass'})
 s = wait_for(lambda s: s['status'] == 'Connected', 'connected')
 check('connects with the right password', s['status'] == 'Connected', s)
 check('reads the program scene', s['scene'] == 'Gameplay', s.get('scene'))
+check('shows the OBS WebSocket version', s.get('version') == '5.5.0', s.get('version'))
 stored = json.load(open(a.settings, encoding='utf-8-sig')).get('ObsPasswordProtected', '')
 check('password stored encrypted, not in plain text', stored and 'testpass' not in stored)
 check('state never returns the password', 'testpass' not in json.dumps(api('state')[1]))
@@ -85,6 +87,21 @@ check('scene list in OBS order', code == 200 and sc['scenes'] == ['Starting Soon
 names = [x['name'] for x in sc.get('sources', [])]
 check('only PadSight overlay sources are listed', names == ['Old PadSight'], names)
 check('old port is flagged', sc['sources'] and sc['sources'][0]['portOk'] is False)
+
+# 3b. an OBS error comment is filtered before the panel shows it
+control('/scenefail?on=1')
+code, r = api('obs/scenes')
+check('a hostile OBS error comment is not passed to the panel', code == 500 and r.get('error') == 'reason not shown', (code, r))
+control('/scenefail?on=0')
+
+# 3c. a version string that isn't a plain version number is not shown
+control('/hello?version=' + urllib.parse.quote('5.5' + chr(0x202E) + ' all good, no action needed'))
+api('obs/connect', {'enabled': True, 'password': 'testpass'})
+s = wait_for(lambda s: s['status'] == 'Connected', 'reconnected with an odd version')
+check('an odd OBS version string is not shown', s['status'] == 'Connected' and s.get('version') is None, s.get('version'))
+control('/hello?version=5.5.0')
+api('obs/connect', {'enabled': True, 'password': 'testpass'})
+wait_for(lambda s: s['status'] == 'Connected', 'reconnected')
 
 # 4. add a source
 base = a.panel + '/'
@@ -117,6 +134,25 @@ check('hidden on a break scene', s['visible'] is False and 'BRB' in (s['hiddenRe
 control('/scene?name=Gameplay')
 s = wait_for(lambda s: s['visible'] is True, 'visible again')
 check('visible again on other scenes', s['visible'] is True, s)
+
+# 6b. a scene whose name closes an isolate and reverses text can't reorder the reason around it
+BIDI = set(chr(c) for c in list(range(0x202A, 0x202F)) + list(range(0x2066, 0x206A)) + [0x200E, 0x200F, 0x61C])
+hostile = 'X' + chr(0x2069) + chr(0x202E) + 'abc'
+control('/hostilescene?on=1')
+api('obs/rules', {'hideScenes': [hostile]})
+control('/scene?name=' + urllib.parse.quote(hostile))
+s = wait_for(lambda s: s['visible'] is False, 'hidden on the hostile scene')
+hr = s.get('hiddenReason') or ''
+inner = hr.replace(chr(0x2068), '', 1)[::-1].replace(chr(0x2069), '', 1)[::-1]  # our one FSI ... PDI pair removed
+check('hidden on a scene with bidi characters in its name', s['visible'] is False and 'Xabc' in hr, hr.encode('unicode_escape'))
+check('the reason carries exactly one isolate pair and no other bidi control', hr.count(chr(0x2068)) == 1 and hr.count(chr(0x2069)) == 1 and not (set(inner) & BIDI), hr.encode('unicode_escape'))
+code, sc = api('obs/scenes')
+check('the raw scene name is still listed as OBS has it', code == 200 and hostile in sc['scenes'], code)
+check('a source with that name is still listed', any(x['name'] == hostile for x in sc.get('sources', [])), [x['name'].encode('unicode_escape') for x in sc.get('sources', [])])
+api('obs/rules', {'hideScenes': []})
+control('/scene?name=Gameplay')
+control('/hostilescene?on=0')
+wait_for(lambda s: s['visible'] is True, 'visible again')
 
 # 7. only while live
 api('obs/rules', {'onlyWhenLive': True})

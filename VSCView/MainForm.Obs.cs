@@ -56,12 +56,18 @@ namespace VSCView
             overlayHub.Visible = HiddenReason() == null;
         }
 
+        // Scene names are the user's own data, so they are shown, but with every bidi control removed and then wrapped in
+        // Unicode isolates (FSI ... PDI). Removing first matters: a PDI inside the name would close our isolate, and an
+        // unmatched opener would swallow our PDI. Display text only; the name itself is never changed.
+        internal static string Isolate(string s) =>
+            "\u2068" + new string((s ?? "").Where(c => !StreamTargets.IsBidiControl(c)).ToArray()) + "\u2069";
+
         private string HiddenReason()
         {
             if (manualHidden) return "Hidden with the hotkey or the panel";
             if (obs?.Status != ObsClient.ObsStatus.Connected) return null; // rules need OBS; never hide blindly
             if (settings.ObsHideScenes != null && obs.ProgramScene != null && settings.ObsHideScenes.Contains(obs.ProgramScene))
-                return $"Hidden on the scene \"{obs.ProgramScene}\"";
+                return $"Hidden on the scene \"{Isolate(obs.ProgramScene)}\"";
             if (settings.ObsOnlyWhenLive == true && !obs.Streaming && !obs.Recording)
                 return "Hidden until you go live or record";
             return null;
@@ -249,6 +255,7 @@ namespace VSCView
             string scene = (string)b["scene"], name = ((string)b["name"] ?? "PadSight").Trim(), url = (string)b["url"];
             int width = (int?)b["width"] ?? 0, height = (int?)b["height"] ?? 0;
             if (string.IsNullOrEmpty(scene)) return ApiResponse.Error(400, "Choose a scene");
+            if (scene.Length > 256) return ApiResponse.Error(400, "That scene name is too long");
             if (!SourceNameRx.IsMatch(name)) return ApiResponse.Error(400, "Use letters, numbers, spaces and - _ . ( ) in the source name");
             if (!IsPadSightUrl(url, out int port) || port != overlayHub.Port) return ApiResponse.Error(400, "Only PadSight's own overlay URL can be added");
             if (width < 16 || height < 16 || width > 8192 || height > 8192) return ApiResponse.Error(400, "Width and height must be between 16 and 8192");

@@ -1,6 +1,7 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
+using System.Linq;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -116,7 +117,10 @@ namespace VSCView.Obs
                     }
                     JObject hello = await ReceiveAsync(ws, token).ConfigureAwait(false);
                     if ((int?)hello?["op"] != 0) throw new IOException("Not an obs-websocket server");
-                    ObsVersion = (string)hello["d"]?["obsWebSocketVersion"];
+                    // Shown in the panel's status line: accept a plain version number only (another "OBS" on the LAN could
+                    // send anything here).
+                    string ver = (string)hello["d"]?["obsWebSocketVersion"];
+                    ObsVersion = ver != null && ver.Length <= 20 && ver.All(c => (c >= '0' && c <= '9') || c == '.') ? ver : null;
 
                     var identify = new JObject { ["rpcVersion"] = 1, ["eventSubscriptions"] = EventSubscriptions };
                     JToken auth = hello["d"]?["authentication"];
@@ -134,7 +138,7 @@ namespace VSCView.Obs
                     {
                         // obs-websocket closes with 4009 (AuthenticationFailed) on a wrong password.
                         authFailed = (int?)ws.CloseStatus == 4009 || auth != null;
-                        throw new IOException(authFailed ? "OBS refused the password" : "OBS closed the connection: " + ws.CloseStatusDescription);
+                        throw new IOException(authFailed ? "OBS refused the password" : "OBS closed the connection: " + StreamTargets.SafeText(ws.CloseStatusDescription));
                     }
 
                     // Read the current scene and outputs first, so "Connected" never shows with an unknown scene.
@@ -151,14 +155,14 @@ namespace VSCView.Obs
                     Debug.WriteLine("OBS: " + ex.Message);
                     if (authFailed)
                     {
-                        SetStatus(ObsStatus.WrongPassword, ex.Message);
+                        SetStatus(ObsStatus.WrongPassword, StreamTargets.SafeText(ex.Message));
                         try { ws.Abort(); } catch { }
                         FailPending("Disconnected");
                         break; // retrying a wrong password helps nobody; wait for a new one
                     }
                     SetStatus(ObsStatus.Unreachable, ex is WebSocketException || ex is IOException || ex is OperationCanceledException
                         ? $"OBS isn't answering on {Host}:{Port}. Is OBS running, with its WebSocket server on?"
-                        : ex.Message);
+                        : "OBS isn't answering as expected. Check that OBS is running with its WebSocket server on.");
                 }
                 finally
                 {

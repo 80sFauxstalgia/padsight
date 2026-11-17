@@ -12,6 +12,12 @@
   // ---------------------------------------------------------------- helpers
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => Array.from(el.querySelectorAll(sel));
+  // User-named things (OBS scenes and sources) are shown as they are, minus bidi controls (the same set as the app's
+  // StreamTargets.IsBidiControl): stripBidi() for HTML (inside <bdi>) and attributes, iso() for plain text, which also
+  // wraps the name in Unicode isolates (FSI ... PDI). Removing first matters: a PDI inside a name would close our
+  // isolate. Display only; values and data attributes keep the raw name.
+  const stripBidi = v => String(v ?? '').replace(/[\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C]/g, '');
+  const iso = v => '\u2068' + stripBidi(v) + '\u2069';
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
     get(k, d) { try { const v = localStorage.getItem('padsight.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -461,7 +467,7 @@
     const t = $('#obsStatusTag');
     t.className = 'tag ' + tone; t.textContent = tag;
     let text;
-    if (o.status === 'Connected') text = `Linked to OBS${o.version ? ' (WebSocket ' + o.version + ')' : ''}. Scene: ${o.scene || '?'}${o.streaming ? ' · live' : ''}${o.recording ? ' · recording' : ''}.`;
+    if (o.status === 'Connected') text = `Linked to OBS${o.version ? ' (WebSocket ' + o.version + ')' : ''}. Scene: ${o.scene ? iso(o.scene) : '?'}${o.streaming ? ' · live' : ''}${o.recording ? ' · recording' : ''}.`;
     else if (o.status === 'WrongPassword') text = 'OBS refused the password. Copy it again from OBS › Tools › WebSocket Server Settings › Show Connect Info.';
     else if (o.status === 'Unreachable') text = o.error || 'OBS isn\u2019t answering.';
     else if (o.status === 'Connecting') text = 'Connecting…';
@@ -681,6 +687,12 @@
     }
   });
 
+  // A failed call that touched OBS: what failed, why (when it can be shown) and what to do next.
+  function obsFailure(what, e) {
+    const why = !e || !e.message || e.message === 'reason not shown' ? 'OBS gave an answer PadSight can’t show.' : e.message.replace(/\.?$/, '.');
+    return `${what}: ${why} Check OBS, then try again.`;
+  }
+
   function setNotice(text) {
     streamNotice = text || null;
     clearTimeout(noticeTimer);
@@ -713,8 +725,9 @@
       const keep = r.results.filter(x => !x.ok || x.notice);
       if (keep.length) setNotice(keep.map(x => `${streamNames([x.key])[0]}: ${x.message}`).join(' · '));
     } catch (e) {
-      toast(e.message);
-      setNotice(`${op === 'start' ? 'Start' : 'Stop'} failed: ${e.message}`);
+      const msg = obsFailure(op === 'start' ? 'Start failed' : 'Stop failed', e);
+      toast(msg);
+      setNotice(msg + ' If it keeps happening, use Copy diagnostics on the Help page.');
     } finally {
       if (op === 'start') busyStart = null; else stopsRunning--;
       renderStreams();   // not forced: a name typed meanwhile survives (the in-place update refreshes buttons)
@@ -752,16 +765,17 @@
     lastSig.obsLinked = sig;
     const addSel = $('#obsAddScene');
     const keep = addSel.value || sc.current;
-    addSel.innerHTML = sc.scenes.map(n => `<option ${n === keep ? 'selected' : ''}>${esc(n)}</option>`).join('');
+    // Each option is its own line, so stripping is enough; no isolate characters, so typing a first letter still jumps.
+    addSel.innerHTML = sc.scenes.map(n => `<option value="${esc(n)}" dir="auto" ${n === keep ? 'selected' : ''}>${esc(stripBidi(n))}</option>`).join('');
     $('#obsSources').innerHTML = sc.sources.length ? sc.sources.map(s => `
-      <div class="row spread"><div><b>${esc(s.name)}</b><p class="small mono">${esc(s.url)} · ${s.width}×${s.height}</p></div>
+      <div class="row spread"><div><b><bdi>${esc(stripBidi(s.name))}</bdi></b><p class="small mono"><bdi>${esc(stripBidi(s.url))}</bdi> · ${s.width}×${s.height}</p></div>
       ${s.portOk ? '<span class="tag ok">OK</span>' : `<button class="btn small" type="button" data-act="obs-fix" data-name="${esc(s.name)}">Fix port</button>`}</div>`).join('')
       : '<p class="small">No PadSight sources yet.</p>';
     const themeOpts = sel => `<option value="">Follow the app</option>` + (themes || []).map(t => `<option value="${esc(t.key)}" ${t.key === sel ? 'selected' : ''}>${esc(t.family)} · ${esc(themeTitle(t))}</option>`).join('');
     $('#obsRules').innerHTML = sc.scenes.map(n => `
       <div class="row spread" data-scene="${esc(n)}">
-        <b style="min-width:160px">${esc(n)}${n === o.scene ? ' <span class="tag ok">NOW</span>' : ''}</b>
-        <div class="row"><select data-rule="theme" aria-label="Theme on ${esc(n)}">${themeOpts(o.rules.sceneThemes[n])}</select>
+        <b style="min-width:160px"><bdi>${esc(stripBidi(n))}</bdi>${n === o.scene ? ' <span class="tag ok">NOW</span>' : ''}</b>
+        <div class="row"><select data-rule="theme" aria-label="Theme on ${esc(stripBidi(n))}">${themeOpts(o.rules.sceneThemes[n])}</select>
         <label class="row small"><input type="checkbox" data-rule="hide" ${o.rules.hideScenes.includes(n) ? 'checked' : ''}> Hide here</label></div>
       </div>`).join('');
     $('#obsOnlyLive').checked = !!o.rules.onlyWhenLive;
@@ -1102,13 +1116,13 @@
       const h = opts.crop && opts.ch > 0 ? Math.round(opts.ch) : t?.height;
       const scene = $('#obsAddScene').value, name = $('#obsAddName').value.trim();
       if (!w || !h) { toast('Pick a theme first, so the size is known'); return; }
-      if (!await askConfirm({ title: `Add "${name}" (${w}×${h}) to the OBS scene "${scene}"?`, okText: 'Add to OBS' })) return;
-      try { await api('obs/add-source', { scene, name, url: builtUrl(false), width: w, height: h }); toast(`Added to "${scene}". Move and scale it in OBS.`); loadObsScenes(); }
-      catch (e) { toast(e.message); }
+      if (!await askConfirm({ title: `Add "${iso(name)}" (${w}×${h}) to the OBS scene "${iso(scene)}"?`, okText: 'Add to OBS' })) return;
+      try { await api('obs/add-source', { scene, name, url: builtUrl(false), width: w, height: h }); toast(`Added to "${iso(scene)}". Move and scale it in OBS.`); loadObsScenes(); }
+      catch (e) { toast(obsFailure('Couldn’t add the source', e)); }
     },
     'obs-fix': async b => {
       try { const r = await api('obs/fix-port', { name: b.dataset.name }); toast('Updated: ' + r.url); loadObsScenes(); }
-      catch (e) { toast(e.message); }
+      catch (e) { toast(obsFailure('Couldn’t update the source', e)); }
     },
     'streams-refresh': () => loadStreams(true),
     'stream-one': b => streamAction(b.dataset.op, scopeKeys(b.dataset.op, 'all').filter(k => k === b.dataset.key)),
