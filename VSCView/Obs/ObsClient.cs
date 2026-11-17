@@ -134,7 +134,7 @@ namespace VSCView.Obs
                     {
                         // obs-websocket closes with 4009 (AuthenticationFailed) on a wrong password.
                         authFailed = (int?)ws.CloseStatus == 4009 || auth != null;
-                        throw new IOException(authFailed ? "OBS refused the password" : "OBS closed the connection: " + ws.CloseStatusDescription);
+                        throw new IOException(authFailed ? "OBS refused the password" : "OBS closed the connection: " + StreamTargets.SafeText(ws.CloseStatusDescription));
                     }
 
                     // Read the current scene and outputs first, so "Connected" never shows with an unknown scene.
@@ -151,14 +151,14 @@ namespace VSCView.Obs
                     Debug.WriteLine("OBS: " + ex.Message);
                     if (authFailed)
                     {
-                        SetStatus(ObsStatus.WrongPassword, ex.Message);
+                        SetStatus(ObsStatus.WrongPassword, StreamTargets.SafeText(ex.Message));
                         try { ws.Abort(); } catch { }
                         FailPending("Disconnected");
                         break; // retrying a wrong password helps nobody; wait for a new one
                     }
                     SetStatus(ObsStatus.Unreachable, ex is WebSocketException || ex is IOException || ex is OperationCanceledException
                         ? $"OBS isn't answering on {Host}:{Port}. Is OBS running, with its WebSocket server on?"
-                        : ex.Message);
+                        : StreamTargets.SafeText(ex.Message));
                 }
                 finally
                 {

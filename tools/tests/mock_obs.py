@@ -23,6 +23,7 @@ A tiny control port lets a test drive OBS-side changes:
        (also dup=1: Aitum lists a name twice; nonascii=1: a non-ASCII obs-multi-rtmp id; hostile=1: an Aitum
         output whose name is HTML)
   curl "http://127.0.0.1:4466/outputlist?fail=1"   -> GetOutputList fails
+  curl "http://127.0.0.1:4466/scenefail?on=1"      -> GetSceneList fails with a hostile error comment
   curl "http://127.0.0.1:4466/hang?type=A,B"       -> requests of these types never get an answer (/hang clears)
   curl "http://127.0.0.1:4466/startmode?m=error"   -> StartStream fails; m=never: accepted but never live;
                                                        m=hostile / m=long: the error comment has a bidi override and a
@@ -72,6 +73,7 @@ state = {
                              # hostile: a refusal with a bidi override and a line break; notactive: "output is not active"
     'outputlist_fail': False,  # GetOutputList fails
     'hang': [],                # request types that never get an answer
+    'scenefail': False,        # GetSceneList fails with an error comment that has a bidi override and a line break
     'aitum_live_at': {},   # Aitum output name -> when a slow start goes live
     'live_at': 0.0,   # slow start: when the stream goes live
     'mrtmp': {'1001': False, '1002': False},              # target id -> running
@@ -257,6 +259,8 @@ def handle_request(rtype, data):
     if rtype == 'GetRecordStatus':
         return True, {'outputActive': state['recording']}
     if rtype == 'GetSceneList':
+        if state['scenefail']:
+            return False, (702, 'Bad' + chr(0x202E) + chr(10) + 'scene list')
         n = len(state['scenes'])
         return True, {'currentProgramSceneName': state['scene'],
                       'scenes': [{'sceneName': s, 'sceneIndex': n - 1 - i} for i, s in enumerate(state['scenes'])]}
@@ -406,6 +410,8 @@ async def control_handler(reader, writer):
             state['aitum'].setdefault(hostile, False)
         else:
             state['aitum'].pop(hostile, None)
+    elif u.path == '/scenefail':
+        state['scenefail'] = q.get('on') == '1'
     elif u.path == '/outputlist':
         state['outputlist_fail'] = q.get('fail') == '1'
     elif u.path == '/hang':

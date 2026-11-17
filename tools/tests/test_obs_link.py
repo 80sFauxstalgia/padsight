@@ -86,6 +86,12 @@ names = [x['name'] for x in sc.get('sources', [])]
 check('only PadSight overlay sources are listed', names == ['Old PadSight'], names)
 check('old port is flagged', sc['sources'] and sc['sources'][0]['portOk'] is False)
 
+# 3b. an OBS error comment is filtered before the panel shows it
+control('/scenefail?on=1')
+code, r = api('obs/scenes')
+check('a hostile OBS error comment is not passed to the panel', code == 500 and r.get('error') == 'reason not shown', (code, r))
+control('/scenefail?on=0')
+
 # 4. add a source
 base = a.panel + '/'
 code, r = api('obs/add-source', {'scene': 'Gameplay', 'name': 'Evil', 'url': 'https://evil.example/', 'width': 100, 'height': 100})

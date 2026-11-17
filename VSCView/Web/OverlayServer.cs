@@ -281,7 +281,9 @@ namespace VSCView.Web
                         eq < 0 ? "" : Uri.UnescapeDataString(part.Substring(eq + 1).Replace('+', ' '));
                 }
                 try { res = Api(new ApiRequest { Method = method, Path = path, Query = q, Body = body }) ?? ApiResponse.Error(404, "Unknown API"); }
-                catch (Exception ex) { res = ApiResponse.Error(500, ex.Message); }
+                // The text may carry an OBS error comment (scenes, add-source and fix-port all call OBS): filter it like
+                // every other message from OBS before the panel shows it.
+                catch (Exception ex) { res = ApiResponse.Error(500, VSCView.Obs.StreamTargets.SafeText(ex.Message)); }
             }
             WriteJson(stream, res);
         }
