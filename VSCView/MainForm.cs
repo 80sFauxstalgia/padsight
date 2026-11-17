@@ -365,7 +365,7 @@ namespace VSCView
             {
                 case "DEVICE_SC2026": candidates = new[] { @"themes\steamcontroller2026\realistic\Full.json", @"themes\steamcontroller2026\graphite\Full.json" }; break;
                 case "DEVICE_SC": candidates = new[] { @"themes\steamcontroller\realistic\Full.json", @"themes\steamcontroller\graphite\Full.json" }; break;
-                case "DEVICE_SC_CHELL": candidates = new[] { @"themes\steamcontrollerchell\default\all.json" }; break;
+                // DEVICE_SC_CHELL: no bundled theme (upstream's was built on a product photo); a user-installed one still works.
                 case "DEVICE_DS5": candidates = new[] { @"themes\dualsense\default\midnight black\All.json" }; break;
                 case "DEVICE_DS4": candidates = new[] { @"themes\dualshock4\default\V2\jet black\all.json" }; break;
                 case "DEVICE_XBOX": candidates = new[] { @"themes\xboxwirelesscontroller\default\Xbox One S\XB1 S (Black).json", @"themes\xbox360controller\default\XB360 (Black).json" }; break;

@@ -22,8 +22,15 @@ $stage = Join-Path $dist $name
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory -Force $stage | Out-Null
 
+# themes\ and icons\ are copied into bin with PreserveNewest, which never deletes, so a file removed from
+# the source tree can linger in an old bin folder. Package those two folders only from what the source has.
+$src = Join-Path $root 'VSCView'
 Get-ChildItem $bin -Recurse -File |
     Where-Object { $_.Extension -ne '.pdb' -and $_.Name -notlike 'settings*.json' -and $_.Name -ne 'ctrl.last' } |
+    Where-Object {
+        $rel = $_.FullName.Substring($bin.Length + 1)
+        -not ($rel -like 'themes\*' -or $rel -like 'icons\*') -or (Test-Path -LiteralPath (Join-Path $src $rel))
+    } |
     ForEach-Object {
         $rel = $_.FullName.Substring($bin.Length + 1)
         $dest = Join-Path $stage $rel
