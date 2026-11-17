@@ -89,6 +89,24 @@ Once linked:
   * or show it only while you're live or recording.
 * **Hotkeys** (on the same page, no OBS link needed): hide/show the overlay and switch to the next controller. They work system-wide, so a Stream Deck "hotkey" button can press them too.
 
+#### Start and stop streams
+The **Streams** card on the OBS page lists OBS's own stream plus the extra streams of two multistream plugins:
+* [obs-multi-rtmp](https://github.com/sorayuki/obs-multi-rtmp), version 0.7.4.5 or newer;
+* [Aitum Multistream](https://github.com/Aitum/obs-aitum-multistream).
+
+Give each stream a name and a type (for example Twitch, YouTube or Kick), and you get:
+* **Start all** and **Stop all**;
+* **Start** and **Stop** for each type;
+* saved combinations of streams: tick some streams, name the set, and save it;
+* **Start** and **Stop** on each row, to add one stream while the others are already live.
+
+Every start and stop asks you first, naming exactly what goes live or ends. A start begins with OBS's own stream, because plugin streams that share its encoder need it running. A stop ends the plugin streams first and OBS's own stream last.
+
+Limits:
+* **obs-multi-rtmp** has no remote control of its own, so PadSight presses its per-target start and stop hotkeys through OBS. PadSight only sees an id for each target, and nothing comes back per target: the card shows how many obs-multi-rtmp targets are live in total. Name each target in the card once. OBS's **Settings › Hotkeys** lists the plugin's hotkeys for each target, which helps tell them apart. The plugin also skips targets that are switched off in its dock.
+* **OBS may ask for its own confirmation** when a stream with a stream delay stops, or when Aitum's stop warning is on. Answer it in OBS.
+* **Aitum Vertical's separate canvas** isn't controlled yet.
+
 ### Settings
 The panel's **Settings** page covers follow mode, per-controller themes, auto-select, the default frame rate, the accent colour and the desktop preview window. Port and background colour are in the classic dialog (the panel's **Port and background colour…** button, or right-click › **Settings…** in the preview window):
 * **OBS Browser Source**: on/off, port, frame rate, the URL to copy, and live status (connected sources, render and encode time per frame).

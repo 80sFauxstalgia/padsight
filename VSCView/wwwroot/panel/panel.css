@@ -235,3 +235,8 @@ ol.steps-list b { color: var(--text); }
 }
 #obsRules .row > .row { flex: 1 1 260px; justify-content: flex-end; flex-wrap: nowrap; }
 #obsRules input[type=checkbox] { accent-color: var(--accent); }
+
+/* Streams card: one row per stream, wraps on narrow docks */
+.stream-row { padding-top: 10px; border-top: 1px solid var(--line); }
+.stream-row input[type="text"] { width: 180px; max-width: 100%; }
+#comboName { width: 280px; max-width: 100%; }

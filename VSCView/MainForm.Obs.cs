@@ -111,6 +111,7 @@ namespace VSCView
                 version = obs?.ObsVersion,
                 scene = obs?.ProgramScene,
                 streaming = obs?.Streaming ?? false,
+                streamsVersion = obs?.StreamsVersion ?? 0,
                 recording = obs?.Recording ?? false,
                 visible = overlayHub?.Visible ?? true,
                 hiddenReason = HiddenReason(),
@@ -283,6 +284,93 @@ namespace VSCView
             obs.Request("SetInputSettings", new JObject { ["inputName"] = name, ["inputSettings"] = new JObject { ["url"] = ub.Uri.AbsoluteUri } });
             return ApiResponse.Ok(JsonConvert.SerializeObject(new { fixedSource = name, url = ub.Uri.AbsoluteUri }));
         }
+
+        #region Stream control
+        private static readonly Regex StreamKeyRx = new Regex(@"^(main|mrtmp:[A-Za-z0-9_\-]{1,64}|aitum:[^\x00-\x1F]{1,128})$");
+        private static readonly Regex ComboNameRx = new Regex(@"^[\p{L}\p{N} _\-]{1,32}$");
+        private static readonly Regex StreamTypeRx = new Regex(@"^[\p{L}\p{N} _\-\.]{1,24}$");
+
+        private object StreamPrefsView() => new
+        {
+            prefs = settings.StreamPrefs ?? new Dictionary<string, StreamPref>(),
+            combos = settings.StreamCombos ?? new Dictionary<string, List<string>>(),
+        };
+
+        /// <summary>GET /api/obs/streams: every stream PadSight can start or stop, plus the saved labels, types and combos (server thread).</summary>
+        private ApiResponse ApiObsStreams()
+        {
+            if (obs?.Status != ObsClient.ObsStatus.Connected) return ApiResponse.Error(409, "Link PadSight to OBS first");
+            StreamDiscovery d = StreamTargets.Discover(obs);
+            return ApiResponse.Ok(JsonConvert.SerializeObject(new
+            {
+                targets = d.Targets.Select(t => new { key = t.Key, kind = t.Kind, name = t.Name, active = t.Active, note = t.Note }),
+                multiRtmp = d.MultiRtmp, multiRtmpActive = d.MultiRtmpActive, aitum = d.Aitum,
+                version = obs.StreamsVersion,
+                saved = StreamPrefsView(),
+            }));
+        }
+
+        /// <summary>
+        /// POST /api/obs/streams/action {op: "start"|"stop", targets: [keys], confirm: true}. Going live is public and stopping
+        /// ends a broadcast, so the call must carry confirm: true (the panel asks the user first). Server thread.
+        /// </summary>
+        private ApiResponse ApiObsStreamAction(JObject b)
+        {
+            if (obs?.Status != ObsClient.ObsStatus.Connected) return ApiResponse.Error(409, "Link PadSight to OBS first");
+            if (b["confirm"]?.Type != JTokenType.Boolean || !(bool)b["confirm"]) return ApiResponse.Error(400, "Starting or stopping a stream needs confirm: true");
+            string op = (string)b["op"];
+            if (op != "start" && op != "stop") return ApiResponse.Error(400, "op must be start or stop");
+            if (!(b["targets"] is JArray arr) || arr.Count == 0 || arr.Count > 50 || arr.Any(x => x.Type != JTokenType.String))
+                return ApiResponse.Error(400, "Choose at least one stream");
+            var keys = arr.Select(x => (string)x).Distinct().ToList();
+            StreamDiscovery d = StreamTargets.Discover(obs);
+            var known = new HashSet<string>(d.Targets.Select(t => t.Key));
+            var unknown = keys.Where(k => !known.Contains(k)).ToList();
+            if (unknown.Count > 0) return ApiResponse.Error(400, "OBS doesn't have these streams (any more): " + string.Join(", ", unknown));
+            var results = StreamTargets.Run(obs, d, op == "start", keys);
+            Debug.WriteLine($"Stream {op}: " + string.Join("; ", results.Select(r => $"{r.Key} {(r.Ok ? "ok" : "failed")} {r.Message}")));
+            return ApiResponse.Ok(JsonConvert.SerializeObject(new
+            {
+                op,
+                results = results.Select(r => new { key = r.Key, ok = r.Ok, message = r.Message }),
+            }));
+        }
+
+        /// <summary>POST /api/obs/streams/prefs {targets?: {key: {label, type}}, combos?: {name: [keys]}}. Replaces what it's given.</summary>
+        private ApiResponse ApiObsStreamPrefs(JObject b)
+        {
+            if (b["targets"] is JObject tp)
+            {
+                var map = new Dictionary<string, StreamPref>();
+                if (tp.Count > 100) return ApiResponse.Error(400, "Too many streams");
+                foreach (var p in tp.Properties())
+                {
+                    if (!StreamKeyRx.IsMatch(p.Name)) return ApiResponse.Error(400, "Unknown stream key");
+                    string label = ((string)p.Value?["label"] ?? "").Trim(), type = ((string)p.Value?["type"] ?? "").Trim();
+                    if (label.Length > 40 || label.Any(char.IsControl)) return ApiResponse.Error(400, "Keep stream names to 40 characters");
+                    if (type.Length > 0 && !StreamTypeRx.IsMatch(type)) return ApiResponse.Error(400, "Use a short word for the type, e.g. Twitch");
+                    if (label.Length > 0 || type.Length > 0) map[p.Name] = new StreamPref { Label = label.Length > 0 ? label : null, Type = type.Length > 0 ? type : null };
+                }
+                settings.StreamPrefs = map;
+            }
+            if (b["combos"] is JObject cp)
+            {
+                if (cp.Count > 12) return ApiResponse.Error(400, "Up to 12 saved combinations");
+                var combos = new Dictionary<string, List<string>>();
+                foreach (var p in cp.Properties())
+                {
+                    string name = p.Name.Trim();
+                    if (!ComboNameRx.IsMatch(name)) return ApiResponse.Error(400, "Name combinations with letters, numbers, spaces, - and _ (up to 32)");
+                    if (!(p.Value is JArray keys) || keys.Count == 0 || keys.Count > 50 || keys.Any(k => k.Type != JTokenType.String || !StreamKeyRx.IsMatch((string)k)))
+                        return ApiResponse.Error(400, $"\"{name}\" needs at least one stream");
+                    combos[name] = keys.Select(k => (string)k).Distinct().ToList();
+                }
+                settings.StreamCombos = combos;
+            }
+            SaveSettings();
+            return ApiResponse.Ok(JsonConvert.SerializeObject(new { saved = StreamPrefsView() }));
+        }
+        #endregion
 
         private ApiResponse ApiVisibility(JObject b)
         {

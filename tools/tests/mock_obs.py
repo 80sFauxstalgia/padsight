@@ -6,11 +6,20 @@ Implements: Hello/Identify with password auth, GetCurrentProgramScene, GetStream
 GetSceneList, GetInputList, GetInputSettings, CreateInput, SetInputSettings. Wrong passwords are closed with
 code 4009, like OBS.
 
+Stream control: StartStream, StopStream, GetOutputList, GetHotkeyList, TriggerHotkeyByName and CallVendorRequest,
+imitating two multistream plugins:
+  * obs-multi-rtmp: targets 1001 and 1002, driven only by the hotkeys "obs-multi-rtmp.start.<id>" / ".stop.<id>";
+    every running target is an output named "multi-output".
+  * Aitum Multistream: vendor "aitum-multistream" with get_outputs / start_output / stop_output, outputs named
+    "aitum_multi_output_<name>", and output_started / output_stopped vendor events.
+Every stream request is logged in order under "calls" in /state.
+
 A tiny control port lets a test drive OBS-side changes:
   curl "http://127.0.0.1:4466/scene?name=BRB"      -> CurrentProgramSceneChanged
   curl "http://127.0.0.1:4466/stream?on=1"         -> StreamStateChanged
   curl "http://127.0.0.1:4466/state"               -> JSON dump of scenes and inputs
   curl "http://127.0.0.1:4466/reset"               -> back to the starting scenes and inputs
+  curl "http://127.0.0.1:4466/plugins?mrtmp=0&aitum=0" -> pretend the multistream plugins aren't installed
 Standard library only.
 """
 import argparse
@@ -42,6 +51,11 @@ state = {
     'close_replies': 0,  # clients that answered our close frame (a polite close)
     'refused': 0,        # connection attempts while "restarting"
     'down_until': 0.0,
+    'plugins': {'mrtmp': True, 'aitum': True},
+    'mrtmp': {'1001': False, '1002': False},              # target id -> running
+    'aitum': {'Kick': False, 'YouTube Vertical': False},  # output name -> running
+    'calls': [],    # stream-control requests, in order: [requestType, detail]
+    'events': [],   # events to send after the current response: (type, data, intent)
 }
 clients = set()
 INITIAL = copy.deepcopy(state)
@@ -88,11 +102,76 @@ async def broadcast_event(event_type, data, intent):
                 pass
 
 
+STREAM_CALLS = {'StartStream', 'StopStream', 'TriggerHotkeyByName', 'CallVendorRequest'}
+
+
+def stream_event():
+    state['events'].append(('StreamStateChanged', {'outputActive': state['streaming'],
+                            'outputState': 'OBS_WEBSOCKET_OUTPUT_STARTED' if state['streaming'] else 'OBS_WEBSOCKET_OUTPUT_STOPPED'}, 1 << 6))
+
+
 def handle_request(rtype, data):
+    if rtype in STREAM_CALLS and (data or {}).get('requestType') != 'get_outputs':  # log what changes state, not lookups
+        d = data or {}
+        detail = d.get('hotkeyName') or (d.get('requestType', '') + ' ' + json.dumps(d.get('requestData', {}))).strip()
+        state['calls'].append([rtype, detail])
+    if rtype == 'StartStream':
+        if state['streaming']:
+            return False, (500, 'The stream output is already running.')
+        state['streaming'] = True
+        stream_event()
+        return True, {}
+    if rtype == 'StopStream':
+        if not state['streaming']:
+            return False, (501, 'The stream output is not running.')
+        state['streaming'] = False
+        stream_event()
+        return True, {}
+    if rtype == 'GetOutputList':
+        outs = [{'outputName': 'simple_stream', 'outputKind': 'rtmp_output', 'outputActive': state['streaming']},
+                {'outputName': 'simple_file_output', 'outputKind': 'ffmpeg_muxer', 'outputActive': state['recording']}]
+        outs += [{'outputName': 'multi-output', 'outputKind': 'rtmp_output', 'outputActive': True} for on in state['mrtmp'].values() if on]
+        outs += [{'outputName': 'aitum_multi_output_' + n, 'outputKind': 'rtmp_output', 'outputActive': True} for n, on in state['aitum'].items() if on]
+        return True, {'outputs': outs}
+    if rtype == 'GetHotkeyList':
+        keys = ['OBSBasic.StartStreaming', 'OBSBasic.StopStreaming']
+        if state['plugins']['mrtmp']:
+            keys += ['obs-multi-rtmp.start_all', 'obs-multi-rtmp.stop_all']
+            for i in state['mrtmp']:
+                keys += ['obs-multi-rtmp.start.' + i, 'obs-multi-rtmp.stop.' + i]
+        return True, {'hotkeys': keys}
+    if rtype == 'TriggerHotkeyByName':
+        name = (data or {}).get('hotkeyName', '')
+        if state['plugins']['mrtmp'] and name.startswith('obs-multi-rtmp.'):
+            verb, _, tid = name[len('obs-multi-rtmp.'):].partition('.')
+            if tid in state['mrtmp'] and verb in ('start', 'stop'):
+                state['mrtmp'][tid] = verb == 'start'
+                return True, {}
+        return False, (600, 'No hotkeys were found by that name.')
+    if rtype == 'CallVendorRequest':
+        d = data or {}
+        if d.get('vendorName') != 'aitum-multistream' or not state['plugins']['aitum']:
+            return False, (600, 'No vendor was found by that name.')
+        rt, rd = d.get('requestType'), d.get('requestData') or {}
+        out = {'vendorName': 'aitum-multistream', 'requestType': rt}
+        if rt == 'get_outputs':
+            out['responseData'] = {'outputs': [{'name': n, 'vertical': 'Vertical' in n} for n in state['aitum']]}
+            return True, out
+        if rt in ('start_output', 'stop_output'):
+            n = rd.get('name')
+            if n not in state['aitum']:
+                return False, (702, 'output not found')
+            state['aitum'][n] = rt == 'start_output'
+            state['events'].append(('VendorEvent', {'vendorName': 'aitum-multistream',
+                                    'eventType': 'output_started' if rt == 'start_output' else 'output_stopped',
+                                    'eventData': {'name': 'aitum_multi_output_' + n}}, 1 << 9))
+            out['responseData'] = {}
+            return True, out
+        return False, (702, 'unknown vendor request')
     if rtype == 'GetCurrentProgramScene':
         return True, {'currentProgramSceneName': state['scene'], 'sceneName': state['scene']}
     if rtype == 'GetStreamStatus':
-        return True, {'outputActive': state['streaming']}
+        return True, {'outputActive': state['streaming'], 'outputReconnecting': False}
     if rtype == 'GetRecordStatus':
         return True, {'outputActive': state['recording']}
     if rtype == 'GetSceneList':
@@ -194,6 +273,9 @@ async def ws_handler(reader, writer, password):
                 else:
                     out['requestStatus']['comment'] = res[1]
                 await send(writer, {'op': 7, 'd': out})
+                events, state['events'] = state['events'], []
+                for ev in events:
+                    await broadcast_event(*ev)
     except (asyncio.IncompleteReadError, ConnectionError):
         pass
     finally:
@@ -225,6 +307,10 @@ async def control_handler(reader, writer):
     elif u.path == '/reset':
         state.clear()
         state.update(copy.deepcopy(INITIAL))
+    elif u.path == '/plugins':
+        for k in ('mrtmp', 'aitum'):
+            if k in q:
+                state['plugins'][k] = q[k] == '1'
     elif u.path == '/scene':
         state['scene'] = q.get('name', state['scene'])
         await broadcast_event('CurrentProgramSceneChanged', {'sceneName': state['scene']}, 1 << 2)
@@ -237,7 +323,8 @@ async def control_handler(reader, writer):
     elif u.path == '/state':
         body = {'scene': state['scene'], 'streaming': state['streaming'], 'inputs': {k: v[1] for k, v in state['inputs'].items()},
                 'scene_items': state['scene_items'], 'auth_attempts': state['auth_attempts'],
-                'close_replies': state['close_replies'], 'refused': state['refused']}
+                'close_replies': state['close_replies'], 'refused': state['refused'],
+                'mrtmp': state['mrtmp'], 'aitum': state['aitum'], 'calls': state['calls']}
     data = json.dumps(body).encode()
     writer.write(b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n' % len(data) + data)
     await writer.drain()
