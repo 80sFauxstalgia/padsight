@@ -303,7 +303,7 @@ namespace VSCView
                 ("virtualcam", "GetVirtualcamStatus", "StartVirtualcam", "StopVirtualcam") })
             {
                 if (b[key] == null) continue;
-                if (b[key].Type != JTokenType.Boolean) return ApiResponse.Error(400, $""{key}" must be true or false");
+                if (b[key].Type != JTokenType.Boolean) return ApiResponse.Error(400, $"\"{key}\" must be true or false");
                 wanted.Add((key, status, start, stop, (bool)b[key]));
             }
             if (wanted.Count == 0) return ApiResponse.Error(400, "Send streaming, recording and/or virtualcam as true or false");
