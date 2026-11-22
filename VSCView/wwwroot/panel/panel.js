@@ -27,7 +27,7 @@
     }
     const r = await fetch('/api/' + path, opt);
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) { const e = new Error(j.error || r.statusText); e.status = r.status; throw e; }
+    if (!r.ok) { const e = new Error(j.error || r.statusText); e.status = r.status; e.body = j; throw e; }
     return j;
   }
 
@@ -451,6 +451,10 @@
   const OBS_OUTPUTS = [['streaming', 'Stream', 'Streaming'], ['recording', 'Record', 'Recording'], ['virtualcam', 'Virtual cam', 'The virtual camera']];
   let obsOutPending = null; // {body, text} waiting for the in-panel "start too?" answer
   let obsOutBusy = false;
+  // key -> {target, until}: outputs we asked OBS to change. OBS answers Start/Stop before the output has changed
+  // (it goes through STARTING first), so the reply's state is stale; the button waits for the pushed state instead.
+  const obsOutWait = {};
+  const OBS_OUT_WAIT_MS = 10000;
 
   function updateObsOutputsCard() {
     const o = state?.obs;
@@ -460,29 +464,44 @@
     $('#obsOutNote').textContent = why;
     let active = 0;
     for (const [key, label] of OBS_OUTPUTS) {
+      const w = obsOutWait[key];
+      if (w && (o[key] === w.target || Date.now() > w.until)) delete obsOutWait[key];
+      const wait = on && obsOutWait[key];
       const live = on && !!o[key];
       if (live) active++;
       const tag = $('#obsOut-' + key);
       tag.className = 'tag ' + (live ? (key === 'streaming' ? 'err' : 'ok') : '');
-      tag.textContent = !on ? 'OFFLINE' : live ? (key === 'streaming' ? 'LIVE' : key === 'recording' ? 'RECORDING' : 'ON') : 'OFF';
+      tag.textContent = !on ? 'OFFLINE' : wait ? (wait.target ? 'STARTING' : 'STOPPING') : live ? (key === 'streaming' ? 'LIVE' : key === 'recording' ? 'RECORDING' : 'ON') : 'OFF';
       const b = $(`.outbtn[data-key="${key}"]`);
-      b.textContent = live ? 'Stop' : 'Start';
-      b.disabled = !on || obsOutBusy;
+      b.textContent = wait ? (wait.target ? 'Starting\u2026' : 'Stopping\u2026') : live ? 'Stop' : 'Start';
+      b.disabled = !on || obsOutBusy || !!wait;
       b.title = why;
-      b.setAttribute('aria-label', `${live ? 'Stop' : 'Start'} ${label}${why ? ' (unavailable: ' + why + ')' : ''}`);
+      b.setAttribute('aria-label', `${wait ? (wait.target ? 'Starting' : 'Stopping') : live ? 'Stop' : 'Start'} ${label}${why ? ' (unavailable: ' + why + ')' : ''}`);
     }
     const all = $('.outbtn[data-key="all"]');
-    all.textContent = active === OBS_OUTPUTS.length ? 'Stop all' : 'Start all';
-    all.disabled = !on || obsOutBusy;
+    // "Stop all" whenever anything runs, so it is never a button that asks to start something else; the rows start single outputs.
+    all.textContent = active > 0 ? 'Stop all' : 'Start all';
+    all.disabled = !on || obsOutBusy || Object.keys(obsOutWait).length > 0;
     all.title = why;
     if (!on && obsOutPending) { obsOutPending = null; $('#obsOutConfirm').hidden = true; }
   }
 
   async function sendObsOutputs(body) {
     obsOutBusy = true; updateObsOutputsCard();
-    try { const r = await api('obs/outputs', body); state.obs = r.obs; toast('Sent to OBS'); }
-    catch (e) { toast(e.message); }
+    try { const r = await api('obs/outputs', body); state.obs = r.obs; markObsOutWait(r.applied, body); toast('Sent to OBS'); }
+    catch (e) {
+      // A failure part-way still says what was applied and what OBS looks like now.
+      const b = e.body;
+      if (b?.obs) state.obs = b.obs;
+      if (b?.applied) markObsOutWait(b.applied, body);
+      const done = (b?.applied || []).map(k => OBS_OUTPUTS.find(x => x[0] === k)?.[1].toLowerCase()).filter(Boolean);
+      toast(done.length ? `${e.message} \u2014 already sent to OBS: ${done.join(', ')}` : e.message);
+    }
     finally { obsOutBusy = false; updateObsOutputsCard(); }
+  }
+
+  function markObsOutWait(applied, body) {
+    for (const k of applied || []) if (k in body) obsOutWait[k] = { target: body[k], until: Date.now() + OBS_OUT_WAIT_MS };
   }
 
   function obsTone(o) {
@@ -889,8 +908,7 @@
       if (!o || o.status !== 'Connected' || obsOutBusy) return;
       const key = b.dataset.key;
       const keys = key === 'all' ? OBS_OUTPUTS.map(x => x[0]) : [key];
-      const allOn = OBS_OUTPUTS.every(x => o[x[0]]);
-      const target = key === 'all' ? !allOn : !o[key];
+      const target = key === 'all' ? !OBS_OUTPUTS.some(x => o[x[0]]) : !o[key];
       const body = {};
       for (const k of keys) body[k] = target;
       // Starting something while another output is already running must never surprise.
