@@ -312,6 +312,19 @@ s = wait_for(lambda s: s['streaming'], 'stream live after partial')
 check('outputs: the stream that was applied really is live', s['streaming'] is True and not s['recording'], s)
 control('/fail')
 
+# An OBS build without a virtual camera: the status question itself is refused (like a very old OBS).
+control('/reset')
+wait_for(lambda s: not s['streaming'], 'reset for old obs')
+control('/fail?type=GetVirtualcamStatus&code=500&comment=no%20virtual%20camera%20in%20this%20build')
+code, r = api('obs/outputs', {'streaming': True, 'virtualcam': False})
+check('outputs: a virtualcam stop where OBS has none is skipped, not a 502',
+      code == 200 and r.get('applied') == ['streaming'] and sent() == ['StartStream'], (code, r, sent()))
+control('/fail?type=StartVirtualcam&code=500&comment=no%20virtual%20camera%20in%20this%20build')
+code, r = api('obs/outputs', {'virtualcam': True})
+check('outputs: a virtualcam start where OBS has none fails naming StartVirtualcam',
+      code == 502 and 'StartVirtualcam' in r.get('error', '') and r.get('applied') == [], (code, r))
+control('/fail')
+
 # Stop everything that runs; outputs that are already off are not asked again.
 control('/reset')
 wait_for(lambda s: not s['streaming'], 'reset again')

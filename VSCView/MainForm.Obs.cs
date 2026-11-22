@@ -315,7 +315,11 @@ namespace VSCView
             {
                 foreach (var w in wanted)
                 {
-                    bool current = (bool?)obs.Request(w.status)?["outputActive"] ?? false;
+                    // An OBS without a virtual camera can't be asked for its status; like ObsClient's refresh, read
+                    // that one as off: a start then fails on StartVirtualcam itself (a clear 502), a stop is a skip.
+                    bool current;
+                    try { current = (bool?)obs.Request(w.status)?["outputActive"] ?? false; }
+                    catch (Exception) when (w.key == "virtualcam") { current = false; }
                     if (current == w.target) continue; // already there; OBS would answer "already active"
                     obs.Request(w.target ? w.start : w.stop);
                     applied.Add(w.key);
