@@ -398,6 +398,21 @@
           <button class="btn" type="button" data-act="obs-forget" ${o.hasPassword ? '' : 'hidden'}>Forget password</button>
         </div>
       </section>
+      <section class="card" aria-label="Outputs" id="obsOutputs">
+        <div class="row spread"><h2 class="label">Go live from here</h2><span class="small" id="obsOutNote"></span></div>
+        <div id="obsOutRows">${OBS_OUTPUTS.map(([key, label]) => `
+          <div class="row spread outrow"><span class="outname">${label}</span>
+            <span class="row"><span class="tag" id="obsOut-${key}">…</span>
+            <button class="btn small outbtn" type="button" data-act="obs-output" data-key="${key}" disabled>Start</button></span></div>`).join('')}
+          <div class="row spread outrow"><span class="outname"><b>All</b></span>
+            <button class="btn small outbtn" type="button" data-act="obs-output" data-key="all" disabled>Start all</button></div>
+        </div>
+        <div class="outconfirm" id="obsOutConfirm" role="alertdialog" aria-live="assertive" hidden>
+          <p id="obsOutConfirmText"></p>
+          <div class="row"><button class="btn primary small" type="button" data-act="obs-output-yes">Yes, start</button>
+            <button class="btn small" type="button" data-act="obs-output-no">Cancel</button></div>
+        </div>
+      </section>
       <div id="obsLinked" hidden>
         <div class="grid cols-2">
           <section class="card" aria-label="Add it for me">
@@ -432,6 +447,44 @@
       </section>`;
   }
 
+  // Output rows: [key in ObsState, row label, name used in the "already live" question].
+  const OBS_OUTPUTS = [['streaming', 'Stream', 'Streaming'], ['recording', 'Record', 'Recording'], ['virtualcam', 'Virtual cam', 'The virtual camera']];
+  let obsOutPending = null; // {body, text} waiting for the in-panel "start too?" answer
+  let obsOutBusy = false;
+
+  function updateObsOutputsCard() {
+    const o = state?.obs;
+    if (!o || !$('#obsOutputs')) return;
+    const on = o.status === 'Connected';
+    const why = on ? '' : o.status === 'Connecting' ? 'Waiting for OBS to connect' : 'Connect to OBS above to use these';
+    $('#obsOutNote').textContent = why;
+    let active = 0;
+    for (const [key, label] of OBS_OUTPUTS) {
+      const live = on && !!o[key];
+      if (live) active++;
+      const tag = $('#obsOut-' + key);
+      tag.className = 'tag ' + (live ? (key === 'streaming' ? 'err' : 'ok') : '');
+      tag.textContent = !on ? 'OFFLINE' : live ? (key === 'streaming' ? 'LIVE' : key === 'recording' ? 'RECORDING' : 'ON') : 'OFF';
+      const b = $(`.outbtn[data-key="${key}"]`);
+      b.textContent = live ? 'Stop' : 'Start';
+      b.disabled = !on || obsOutBusy;
+      b.title = why;
+      b.setAttribute('aria-label', `${live ? 'Stop' : 'Start'} ${label}${why ? ' (unavailable: ' + why + ')' : ''}`);
+    }
+    const all = $('.outbtn[data-key="all"]');
+    all.textContent = active === OBS_OUTPUTS.length ? 'Stop all' : 'Start all';
+    all.disabled = !on || obsOutBusy;
+    all.title = why;
+    if (!on && obsOutPending) { obsOutPending = null; $('#obsOutConfirm').hidden = true; }
+  }
+
+  async function sendObsOutputs(body) {
+    obsOutBusy = true; updateObsOutputsCard();
+    try { const r = await api('obs/outputs', body); state.obs = r.obs; toast('Sent to OBS'); }
+    catch (e) { toast(e.message); }
+    finally { obsOutBusy = false; updateObsOutputsCard(); }
+  }
+
   function obsTone(o) {
     switch (o.status) {
       case 'Connected': return ['ok', 'CONNECTED'];
@@ -464,6 +517,7 @@
     const errs = Object.entries(o.hotkeys?.errors || {});
     $('#hkNote').textContent = errs.length ? errs.map(([k, v]) => `${k === 'toggle' ? 'Hide/show' : 'Next controller'}: ${v}`).join(' · ') : 'Use a modifier such as Ctrl+Alt, or F13–F24. Backspace clears.';
 
+    updateObsOutputsCard();
     const linked = o.status === 'Connected';
     $('#obsLinked').hidden = !linked;
     // Scenes and sources rarely change: refresh every 30 s while this page is open (and on Refresh / after changes).
@@ -830,6 +884,30 @@
       if (!confirm('Forget the saved OBS password?')) return;
       try { const r = await api('obs/connect', { forgetPassword: true, enabled: false }); state.obs = r.obs; render(); toast('Password removed'); } catch (e) { toast(e.message); }
     },
+    'obs-output': b => {
+      const o = state?.obs;
+      if (!o || o.status !== 'Connected' || obsOutBusy) return;
+      const key = b.dataset.key;
+      const keys = key === 'all' ? OBS_OUTPUTS.map(x => x[0]) : [key];
+      const allOn = OBS_OUTPUTS.every(x => o[x[0]]);
+      const target = key === 'all' ? !allOn : !o[key];
+      const body = {};
+      for (const k of keys) body[k] = target;
+      // Starting something while another output is already running must never surprise.
+      const running = OBS_OUTPUTS.filter(x => o[x[0]]);
+      if (target && running.length) {
+        const names = running.map(x => x[2]);
+        const what = key === 'all' ? 'start the rest too' : `start ${OBS_OUTPUTS.find(x => x[0] === key)[1].toLowerCase()} too`;
+        const text = `${names.join(' and ')} ${names.length > 1 ? 'are' : 'is'} live \u2014 ${what}?`;
+        obsOutPending = { body };
+        $('#obsOutConfirmText').textContent = text;
+        $('#obsOutConfirm').hidden = false;
+        return;
+      }
+      return sendObsOutputs(body);
+    },
+    'obs-output-yes': () => { const p = obsOutPending; obsOutPending = null; $('#obsOutConfirm').hidden = true; if (p) return sendObsOutputs(p.body); },
+    'obs-output-no': () => { obsOutPending = null; $('#obsOutConfirm').hidden = true; },
     'obs-refresh': () => loadObsScenes(),
     'obs-add': async () => {
       const t = currentThemeInfo();
