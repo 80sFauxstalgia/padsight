@@ -33,7 +33,7 @@ namespace VSCView
             obs = new ObsClient();
             obs.StatusChanged += () => PostToUi(UpdateOverlayVisibility);
             obs.ProgramSceneChanged += scene => PostToUi(() => OnProgramScene(scene));
-            obs.OutputsChanged += (s, r) => PostToUi(UpdateOverlayVisibility);
+            obs.OutputsChanged += (s, r, v) => PostToUi(UpdateOverlayVisibility);
             if (settings.ObsEnabled == true) StartObs();
         }
 
@@ -112,6 +112,7 @@ namespace VSCView
                 scene = obs?.ProgramScene,
                 streaming = obs?.Streaming ?? false,
                 recording = obs?.Recording ?? false,
+                virtualcam = obs?.Virtualcam ?? false,
                 visible = overlayHub?.Visible ?? true,
                 hiddenReason = HiddenReason(),
                 manualHidden,
@@ -282,6 +283,42 @@ namespace VSCView
             var ub = new UriBuilder(url) { Host = "127.0.0.1", Port = overlayHub.Port };
             obs.Request("SetInputSettings", new JObject { ["inputName"] = name, ["inputSettings"] = new JObject { ["url"] = ub.Uri.AbsoluteUri } });
             return ApiResponse.Ok(JsonConvert.SerializeObject(new { fixedSource = name, url = ub.Uri.AbsoluteUri }));
+        }
+
+        /// <summary>
+        /// POST /api/obs/outputs {streaming?, recording?, virtualcam?}: each present key is the TARGET state of that output.
+        /// Each key maps to exactly one official request; absent keys are left alone. Not a generic OBS proxy.
+        /// Runs on the server thread (it waits on OBS, like add-source); state is read on the UI thread.
+        /// </summary>
+        private ApiResponse ApiObsOutputs(JObject b)
+        {
+            var wanted = new List<(string key, string start, string stop, bool target)>();
+            foreach (var (key, start, stop) in new[] {
+                ("streaming", "StartStream", "StopStream"),
+                ("recording", "StartRecord", "StopRecord"),
+                ("virtualcam", "StartVirtualcam", "StopVirtualcam") })
+            {
+                if (b[key] == null) continue;
+                if (b[key].Type != JTokenType.Boolean) return ApiResponse.Error(400, $"\"{key}\" must be true or false");
+                wanted.Add((key, start, stop, (bool)b[key]));
+            }
+            if (wanted.Count == 0) return ApiResponse.Error(400, "Send streaming, recording and/or virtualcam as true or false");
+            if (obs == null || obs.Status != ObsClient.ObsStatus.Connected)
+                return new ApiResponse { Code = 409, Json = OnUi(() => { var st = ObsState();
+                    return JsonConvert.SerializeObject(new { error = "OBS isn't connected" + (obs?.Error != null ? ": " + obs.Error : ""), obs = st }); }) };
+            try
+            {
+                foreach (var w in wanted)
+                {
+                    bool current = OnUi(() => w.key == "streaming" ? obs.Streaming : w.key == "recording" ? obs.Recording : obs.Virtualcam);
+                    if (current == w.target) continue; // already there; OBS would answer "already active"
+                    obs.Request(w.target ? w.start : w.stop);
+                }
+            }
+            catch (ObsRequestException ex) { return ApiResponse.Error(502, ex.Message); }
+            catch (Exception ex) when (ex is TimeoutException || ex is InvalidOperationException || ex is IOException)
+            { return ApiResponse.Error(502, ex.Message); }
+            return ApiResponse.Ok(OnUi(() => JsonConvert.SerializeObject(new { obs = ObsState() })));
         }
 
         private ApiResponse ApiVisibility(JObject b)

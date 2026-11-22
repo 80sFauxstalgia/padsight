@@ -42,13 +42,14 @@ namespace VSCView.Obs
 
         /// <summary>Program scene changed (scene name).</summary>
         public event Action<string> ProgramSceneChanged;
-        /// <summary>Streaming or recording started or stopped (streaming, recording).</summary>
-        public event Action<bool, bool> OutputsChanged;
+        /// <summary>Streaming, recording or the virtual camera started or stopped (streaming, recording, virtualcam).</summary>
+        public event Action<bool, bool, bool> OutputsChanged;
         /// <summary>Connected, disconnected, or the password was refused.</summary>
         public event Action StatusChanged;
 
         public bool Streaming { get; private set; }
         public bool Recording { get; private set; }
+        public bool Virtualcam { get; private set; }
         public string ProgramScene { get; private set; }
 
         /// <summary>(Re)start the connection loop with these settings. Null password = no authentication.</summary>
@@ -186,8 +187,10 @@ namespace VSCView.Obs
                 JObject record = await RequestAsync("GetRecordStatus").ConfigureAwait(false);
                 Streaming = (bool?)stream?["outputActive"] ?? false;
                 Recording = (bool?)record?["outputActive"] ?? false;
+                try { Virtualcam = (bool?)(await RequestAsync("GetVirtualcamStatus").ConfigureAwait(false))?["outputActive"] ?? false; }
+                catch (ObsRequestException) { Virtualcam = false; } // older OBS builds without a virtual camera
                 ProgramSceneChanged?.Invoke(ProgramScene);
-                OutputsChanged?.Invoke(Streaming, Recording);
+                OutputsChanged?.Invoke(Streaming, Recording, Virtualcam);
             }
             catch (Exception ex) { Debug.WriteLine("OBS refresh: " + ex.Message); }
         }
@@ -230,11 +233,15 @@ namespace VSCView.Obs
                     break;
                 case "StreamStateChanged":
                     Streaming = (bool?)data?["outputActive"] ?? false;
-                    OutputsChanged?.Invoke(Streaming, Recording);
+                    OutputsChanged?.Invoke(Streaming, Recording, Virtualcam);
                     break;
                 case "RecordStateChanged":
                     Recording = (bool?)data?["outputActive"] ?? false;
-                    OutputsChanged?.Invoke(Streaming, Recording);
+                    OutputsChanged?.Invoke(Streaming, Recording, Virtualcam);
+                    break;
+                case "VirtualcamStateChanged":
+                    Virtualcam = (bool?)data?["outputActive"] ?? false;
+                    OutputsChanged?.Invoke(Streaming, Recording, Virtualcam);
                     break;
             }
         }
