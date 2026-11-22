@@ -235,3 +235,11 @@ ol.steps-list b { color: var(--text); }
 }
 #obsRules .row > .row { flex: 1 1 260px; justify-content: flex-end; flex-wrap: nowrap; }
 #obsRules input[type=checkbox] { accent-color: var(--accent); }
+
+/* ---------- OBS outputs ---------- */
+#obsOutputs .outrow { padding: 8px 0; border-top: 1px solid var(--line); }
+#obsOutputs .outrow:first-child { border-top: 0; }
+#obsOutputs .outbtn { min-width: 88px; }
+#obsOutputs .outbtn:disabled { opacity: .5; cursor: not-allowed; }
+#obsOutputs .outconfirm { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 6px; background: var(--warn-bg); }
+#obsOutputs .outconfirm p { margin: 0 0 8px; }
