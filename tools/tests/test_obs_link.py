@@ -35,6 +35,16 @@ def api(path, body=None):
         return e.code, json.loads(e.read() or b'{}')
 
 
+def raw_post(path, body, headers):
+    """POST without the helper's defaults, so a test can leave out the key, or send another Origin / Content-Type."""
+    req = urllib.request.Request(a.panel + '/api/' + path, data=body, headers=headers, method='POST')
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, json.loads(r.read() or b'{}')
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b'{}')
+
+
 def control(path):
     with urllib.request.urlopen(a.control + path, timeout=5) as r:
         return json.loads(r.read())
@@ -228,10 +238,102 @@ check('no hammering while OBS restarts (<= 3 tries in 5 s)', st['refused'] <= 3,
 s = wait_for(lambda s: s['status'] == 'Connected', 'reconnected', timeout=20)
 check('reconnects by itself afterwards', s['status'] == 'Connected', s)
 
+# 13b. outputs: POST /api/obs/outputs (the one route that can put the user on air)
+api('obs/connect', {'enabled': True, 'host': '127.0.0.1', 'port': a.mock_port, 'password': 'testpass'})
+wait_for(lambda s: s['status'] == 'Connected', 'connected for outputs')
+control('/reset')  # a clean request log and all outputs off (PadSight keeps its connection)
+wait_for(lambda s: not s['streaming'] and not s['recording'] and not s['virtualcam'], 'outputs off')
+OUT_REQ = ('StartStream', 'StopStream', 'StartRecord', 'StopRecord', 'StartVirtualcam', 'StopVirtualcam')
+def sent():
+    return [r for r in control('/state')['requests'] if r in OUT_REQ]
+
+# Guard: key, Origin and JSON are all required, and none of the refused calls reaches OBS.
+body = json.dumps({'streaming': True}).encode()
+code, r = raw_post('obs/outputs', body, {'Content-Type': 'application/json'})
+check('outputs: no panel key is refused (401)', code == 401, (code, r))
+code, r = raw_post('obs/outputs', body, {'Content-Type': 'application/json', 'X-Panel-Key': 'wrong'})
+check('outputs: wrong panel key is refused (401)', code == 401, (code, r))
+code, r = raw_post('obs/outputs', body, {'Content-Type': 'application/json', 'X-Panel-Key': KEY, 'Origin': 'https://evil.example'})
+check('outputs: a foreign Origin is refused even with the key (403)', code == 403, (code, r))
+code, r = raw_post('obs/outputs', body, {'Content-Type': 'application/json', 'X-Panel-Key': KEY, 'Origin': 'null'})
+check('outputs: Origin "null" is refused (403)', code == 403, (code, r))
+code, r = raw_post('obs/outputs', body, {'Content-Type': 'text/plain', 'X-Panel-Key': KEY})
+check('outputs: a text/plain body (cross-site form post) is refused (415)', code == 415, (code, r))
+code, r = raw_post('obs/outputs', body, {'Content-Type': 'application/x-www-form-urlencoded', 'X-Panel-Key': KEY})
+check('outputs: a form-encoded body is refused (415)', code == 415, (code, r))
+code, r = raw_post('obs/outputs', body, {'X-Panel-Key': KEY})
+check('outputs: no Content-Type is refused (415)', code == 415, (code, r))
+check('outputs: nothing refused above reached OBS', sent() == [], sent())
+
+# Validation: 400 and nothing sent.
+code, r = api('obs/outputs', {})
+check('outputs: empty body is 400', code == 400, (code, r))
+code, r = api('obs/outputs', {'streaming': 'true'})
+check('outputs: a string instead of a boolean is 400', code == 400, (code, r))
+code, r = api('obs/outputs', {'recording': 1})
+check('outputs: a number instead of a boolean is 400', code == 400, (code, r))
+code, r = api('obs/outputs', {'streaming': None})
+check('outputs: null is 400', code == 400, (code, r))
+code, r = api('obs/outputs', {'streaming': True, 'recording': 'yes'})
+check('outputs: one bad value rejects the whole call', code == 400 and sent() == [], (code, r, sent()))
+code, r = api('obs/outputs', {'somethingElse': True})
+check('outputs: unknown keys are not passed through', code == 400 and sent() == [], (code, r, sent()))
+
+# Start: the reply is not the final state; OBS settles a moment later and the pushed state follows.
+code, r = api('obs/outputs', {'streaming': True})
+check('outputs: start stream is accepted and lists it as applied', code == 200 and r.get('applied') == ['streaming'], (code, r))
+check('outputs: only StartStream was sent', sent() == ['StartStream'], sent())
+s = wait_for(lambda s: s['streaming'], 'streaming settled')
+check('outputs: the pushed state settles to streaming', s['streaming'] is True and not s['recording'] and not s['virtualcam'], s)
+
+# Already in the target state: no output request at all (checked against OBS, not the cache).
+before = control('/state')['requests']
+code, r = api('obs/outputs', {'streaming': True})
+after = control('/state')['requests']
+check('outputs: already-live stream sends no Start request', code == 200 and r.get('applied') == [] and [x for x in after[len(before):] if x in OUT_REQ] == [], (code, r, after[len(before):]))
+# A quick second start right after the first would have hit the stale cache; it must not reach OBS either.
+control('/stream?on=0')
+wait_for(lambda s: not s['streaming'], 'stream off')
+api('obs/outputs', {'streaming': True})
+code, r = api('obs/outputs', {'streaming': True})   # immediately, before the event has arrived
+check('outputs: a second start before the event is a no-op, not an OBS error', code == 200 and r.get('applied') == [], (code, r))
+wait_for(lambda s: s['streaming'], 'streaming again')
+
+# Partial failure: stream is already on, record fails -> 502 names what was applied, with the current state.
+control('/reset')
+wait_for(lambda s: not s['streaming'], 'reset')
+control('/fail?type=StartRecord&code=207&comment=disk%20full')
+code, r = api('obs/outputs', {'streaming': True, 'recording': True, 'virtualcam': True})
+check('outputs: partial failure is 502 with the OBS message', code == 502 and 'disk full' in r.get('error', ''), (code, r))
+check('outputs: partial failure lists what was applied', r.get('applied') == ['streaming'], r)
+check('outputs: partial failure carries the current obs state', isinstance(r.get('obs'), dict) and r['obs'].get('status') == 'Connected', r)
+check('outputs: nothing after the failing request was sent', sent()[-1:] == ['StartRecord'] and 'StartVirtualcam' not in sent(), sent())
+s = wait_for(lambda s: s['streaming'], 'stream live after partial')
+check('outputs: the stream that was applied really is live', s['streaming'] is True and not s['recording'], s)
+control('/fail')
+
+# Stop everything that runs; outputs that are already off are not asked again.
+control('/reset')
+wait_for(lambda s: not s['streaming'], 'reset again')
+api('obs/outputs', {'recording': True, 'virtualcam': True})
+wait_for(lambda s: s['recording'] and s['virtualcam'], 'record + virtualcam on')
+n = len(control('/state')['requests'])
+code, r = api('obs/outputs', {'streaming': False, 'recording': False, 'virtualcam': False})
+sent_now = [x for x in control('/state')['requests'][n:] if x in OUT_REQ]
+check('outputs: stop all only stops what runs', code == 200 and sorted(sent_now) == ['StopRecord', 'StopVirtualcam'], (code, r, sent_now))
+s = wait_for(lambda s: not s['recording'] and not s['virtualcam'], 'all off')
+check('outputs: everything ends up off', not s['streaming'] and not s['recording'] and not s['virtualcam'], s)
+
 # 14. disconnect
 api('obs/connect', {'enabled': False})
 s = wait_for(lambda s: s['status'] == 'Off', 'off')
 check('disconnects', s['status'] == 'Off', s)
+
+# 15. outputs while OBS isn't connected: 409 with the state, and nothing sent
+n = len(control('/state')['requests'])
+code, r = api('obs/outputs', {'streaming': True})
+check('outputs: 409 when OBS is not connected', code == 409 and 'connected' in r.get('error', '') and isinstance(r.get('obs'), dict), (code, r))
+check('outputs: nothing reached OBS while disconnected', control('/state')['requests'][n:] == [])
 
 print('\n%d failure(s)' % len(failures))
 sys.exit(1 if failures else 0)

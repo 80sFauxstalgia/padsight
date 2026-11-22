@@ -3,12 +3,14 @@
 Usage:  python tools/tests/mock_obs.py [--port 4456] [--password testpass] [--control 4466]
 
 Implements: Hello/Identify with password auth, GetCurrentProgramScene, GetStreamStatus, GetRecordStatus,
-GetSceneList, GetInputList, GetInputSettings, CreateInput, SetInputSettings. Wrong passwords are closed with
+GetVirtualcamStatus, Start/Stop Stream, Record and Virtualcam (the answer comes first, the
+StateChanged event follows 0.4 s later, like OBS's STARTING step), GetSceneList, GetInputList, GetInputSettings, CreateInput, SetInputSettings. Wrong passwords are closed with
 code 4009, like OBS.
 
 A tiny control port lets a test drive OBS-side changes:
   curl "http://127.0.0.1:4466/scene?name=BRB"      -> CurrentProgramSceneChanged
   curl "http://127.0.0.1:4466/stream?on=1"         -> StreamStateChanged
+  curl "http://127.0.0.1:4466/fail?type=StartRecord"  -> that request type answers an error until /reset (no type: clear)
   curl "http://127.0.0.1:4466/state"               -> JSON dump of scenes and inputs
   curl "http://127.0.0.1:4466/reset"               -> back to the starting scenes and inputs
 Standard library only.
@@ -32,6 +34,9 @@ state = {
     'scenes': ['Starting Soon', 'Gameplay', 'Rocket League', 'BRB'],
     'streaming': False,
     'recording': False,
+    'virtualcam': False,
+    'fail': {},      # request type -> forced error
+    'requests': [],  # every request type received, in order
     'inputs': {  # name -> (kind, settings)
         'Old PadSight': ('browser_source', {'url': 'http://127.0.0.1:47820/?theme=steamcontroller/graphite/Full.json', 'width': 1000, 'height': 760}),
         'Chat widget': ('browser_source', {'url': 'https://example.invalid/chat', 'width': 400, 'height': 600}),
@@ -88,7 +93,32 @@ async def broadcast_event(event_type, data, intent):
                 pass
 
 
+OUTPUTS = {  # request -> (state key, event, new value)
+    'StartStream': ('streaming', 'StreamStateChanged', True), 'StopStream': ('streaming', 'StreamStateChanged', False),
+    'StartRecord': ('recording', 'RecordStateChanged', True), 'StopRecord': ('recording', 'RecordStateChanged', False),
+    'StartVirtualcam': ('virtualcam', 'VirtualcamStateChanged', True), 'StopVirtualcam': ('virtualcam', 'VirtualcamStateChanged', False),
+}
+
+
+async def settle_output(key, event, value):
+    # Like OBS: Get*Status already says "active", but the *StateChanged event only follows after the STARTING step.
+    await asyncio.sleep(0.4)
+    await broadcast_event(event, {'outputActive': value, 'outputState': 'x'}, 1 << 6)
+
+
 def handle_request(rtype, data):
+    state['requests'].append(rtype)
+    if rtype in state['fail']:
+        return False, tuple(state['fail'][rtype])
+    if rtype in OUTPUTS:
+        key, event, value = OUTPUTS[rtype]
+        if state[key] == value:
+            return False, (500, 'The output is already %s.' % ('active' if value else 'inactive'))
+        state[key] = value
+        asyncio.get_running_loop().create_task(settle_output(key, event, value))
+        return True, {}
+    if rtype == 'GetVirtualcamStatus':
+        return True, {'outputActive': state['virtualcam']}
     if rtype == 'GetCurrentProgramScene':
         return True, {'currentProgramSceneName': state['scene'], 'sceneName': state['scene']}
     if rtype == 'GetStreamStatus':
@@ -225,6 +255,10 @@ async def control_handler(reader, writer):
     elif u.path == '/reset':
         state.clear()
         state.update(copy.deepcopy(INITIAL))
+        # Tell connected clients, so a PadSight that stays connected drops its cached output flags too.
+        await broadcast_event('StreamStateChanged', {'outputActive': False, 'outputState': 'x'}, 1 << 6)
+        await broadcast_event('RecordStateChanged', {'outputActive': False, 'outputState': 'x'}, 1 << 6)
+        await broadcast_event('VirtualcamStateChanged', {'outputActive': False, 'outputState': 'x'}, 1 << 6)
     elif u.path == '/scene':
         state['scene'] = q.get('name', state['scene'])
         await broadcast_event('CurrentProgramSceneChanged', {'sceneName': state['scene']}, 1 << 2)
@@ -234,8 +268,13 @@ async def control_handler(reader, writer):
     elif u.path == '/record':
         state['recording'] = q.get('on') == '1'
         await broadcast_event('RecordStateChanged', {'outputActive': state['recording'], 'outputState': 'x'}, 1 << 6)
+    elif u.path == '/fail':
+        if q.get('type'):
+            state['fail'][q['type']] = [int(q.get('code', '500')), q.get('comment', 'forced failure')]
+        else:
+            state['fail'].clear()
     elif u.path == '/state':
-        body = {'scene': state['scene'], 'streaming': state['streaming'], 'inputs': {k: v[1] for k, v in state['inputs'].items()},
+        body = {'recording': state['recording'], 'virtualcam': state['virtualcam'], 'requests': state['requests'], 'scene': state['scene'], 'streaming': state['streaming'], 'inputs': {k: v[1] for k, v in state['inputs'].items()},
                 'scene_items': state['scene_items'], 'auth_attempts': state['auth_attempts'],
                 'close_replies': state['close_replies'], 'refused': state['refused']}
     data = json.dumps(body).encode()
