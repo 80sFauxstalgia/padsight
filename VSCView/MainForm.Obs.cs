@@ -303,7 +303,7 @@ namespace VSCView
                 ("virtualcam", "GetVirtualcamStatus", "StartVirtualcam", "StopVirtualcam") })
             {
                 if (b[key] == null) continue;
-                if (b[key].Type != JTokenType.Boolean) return ApiResponse.Error(400, $""{key}" must be true or false");
+                if (b[key].Type != JTokenType.Boolean) return ApiResponse.Error(400, $"\"{key}\" must be true or false");
                 wanted.Add((key, status, start, stop, (bool)b[key]));
             }
             if (wanted.Count == 0) return ApiResponse.Error(400, "Send streaming, recording and/or virtualcam as true or false");
@@ -315,7 +315,11 @@ namespace VSCView
             {
                 foreach (var w in wanted)
                 {
-                    bool current = (bool?)obs.Request(w.status)?["outputActive"] ?? false;
+                    // An OBS without a virtual camera can't be asked for its status; like ObsClient's refresh, read
+                    // that one as off: a start then fails on StartVirtualcam itself (a clear 502), a stop is a skip.
+                    bool current;
+                    try { current = (bool?)obs.Request(w.status)?["outputActive"] ?? false; }
+                    catch (Exception) when (w.key == "virtualcam") { current = false; }
                     if (current == w.target) continue; // already there; OBS would answer "already active"
                     obs.Request(w.target ? w.start : w.stop);
                     applied.Add(w.key);

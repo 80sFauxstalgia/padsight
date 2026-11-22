@@ -483,7 +483,13 @@
     all.textContent = active > 0 ? 'Stop all' : 'Start all';
     all.disabled = !on || obsOutBusy || Object.keys(obsOutWait).length > 0;
     all.title = why;
-    if (!on && obsOutPending) { obsOutPending = null; $('#obsOutConfirm').hidden = true; }
+    // A page re-render rebuilds the confirm's DOM (hidden), so its answer can never arrive: drop the question with it.
+    if (obsOutPending && $('#obsOutConfirm').hidden) obsOutPending = null;
+    // OBS gone: no push will ever settle these waits, so drop them now instead of freezing the rows for the 10 s cap.
+    if (!on) {
+      for (const k of Object.keys(obsOutWait)) delete obsOutWait[k];
+      if (obsOutPending) { obsOutPending = null; $('#obsOutConfirm').hidden = true; }
+    }
   }
 
   async function sendObsOutputs(body) {
