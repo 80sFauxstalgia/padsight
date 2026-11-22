@@ -188,7 +188,7 @@ namespace VSCView.Obs
                 Streaming = (bool?)stream?["outputActive"] ?? false;
                 Recording = (bool?)record?["outputActive"] ?? false;
                 try { Virtualcam = (bool?)(await RequestAsync("GetVirtualcamStatus").ConfigureAwait(false))?["outputActive"] ?? false; }
-                catch (ObsRequestException) { Virtualcam = false; } // older OBS builds without a virtual camera
+                catch (Exception) { Virtualcam = false; } // older OBS builds without a virtual camera, or a slow answer: never skip the events below
                 ProgramSceneChanged?.Invoke(ProgramScene);
                 OutputsChanged?.Invoke(Streaming, Recording, Virtualcam);
             }

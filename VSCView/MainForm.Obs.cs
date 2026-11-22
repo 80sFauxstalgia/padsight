@@ -289,36 +289,43 @@ namespace VSCView
         /// POST /api/obs/outputs {streaming?, recording?, virtualcam?}: each present key is the TARGET state of that output.
         /// Each key maps to exactly one official request; absent keys are left alone. Not a generic OBS proxy.
         /// Runs on the server thread (it waits on OBS, like add-source); state is read on the UI thread.
+        /// The current state is asked of OBS itself (Get*Status), not read from the cached flags: those lag a
+        /// Start/Stop until OBS's *StateChanged event arrives. The reply lists what was <c>applied</c>; the cached
+        /// <c>obs</c> state in it may still show the old value for those, so the panel treats them as pending until
+        /// the event push settles it. A failure part-way answers 502 with the same <c>applied</c> list and <c>obs</c>.
         /// </summary>
         private ApiResponse ApiObsOutputs(JObject b)
         {
-            var wanted = new List<(string key, string start, string stop, bool target)>();
-            foreach (var (key, start, stop) in new[] {
-                ("streaming", "StartStream", "StopStream"),
-                ("recording", "StartRecord", "StopRecord"),
-                ("virtualcam", "StartVirtualcam", "StopVirtualcam") })
+            var wanted = new List<(string key, string status, string start, string stop, bool target)>();
+            foreach (var (key, status, start, stop) in new[] {
+                ("streaming", "GetStreamStatus", "StartStream", "StopStream"),
+                ("recording", "GetRecordStatus", "StartRecord", "StopRecord"),
+                ("virtualcam", "GetVirtualcamStatus", "StartVirtualcam", "StopVirtualcam") })
             {
                 if (b[key] == null) continue;
-                if (b[key].Type != JTokenType.Boolean) return ApiResponse.Error(400, $"\"{key}\" must be true or false");
-                wanted.Add((key, start, stop, (bool)b[key]));
+                if (b[key].Type != JTokenType.Boolean) return ApiResponse.Error(400, $""{key}" must be true or false");
+                wanted.Add((key, status, start, stop, (bool)b[key]));
             }
             if (wanted.Count == 0) return ApiResponse.Error(400, "Send streaming, recording and/or virtualcam as true or false");
             if (obs == null || obs.Status != ObsClient.ObsStatus.Connected)
                 return new ApiResponse { Code = 409, Json = OnUi(() => { var st = ObsState();
                     return JsonConvert.SerializeObject(new { error = "OBS isn't connected" + (obs?.Error != null ? ": " + obs.Error : ""), obs = st }); }) };
+            var applied = new List<string>();
             try
             {
                 foreach (var w in wanted)
                 {
-                    bool current = OnUi(() => w.key == "streaming" ? obs.Streaming : w.key == "recording" ? obs.Recording : obs.Virtualcam);
+                    bool current = (bool?)obs.Request(w.status)?["outputActive"] ?? false;
                     if (current == w.target) continue; // already there; OBS would answer "already active"
                     obs.Request(w.target ? w.start : w.stop);
+                    applied.Add(w.key);
                 }
             }
-            catch (ObsRequestException ex) { return ApiResponse.Error(502, ex.Message); }
-            catch (Exception ex) when (ex is TimeoutException || ex is InvalidOperationException || ex is IOException)
-            { return ApiResponse.Error(502, ex.Message); }
-            return ApiResponse.Ok(OnUi(() => JsonConvert.SerializeObject(new { obs = ObsState() })));
+            catch (Exception ex) when (ex is ObsRequestException || ex is TimeoutException || ex is InvalidOperationException || ex is IOException)
+            {
+                return new ApiResponse { Code = 502, Json = OnUi(() => JsonConvert.SerializeObject(new { error = ex.Message, applied, obs = ObsState() })) };
+            }
+            return ApiResponse.Ok(OnUi(() => JsonConvert.SerializeObject(new { applied, obs = ObsState() })));
         }
 
         private ApiResponse ApiVisibility(JObject b)
